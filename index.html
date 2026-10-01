@@ -1,0 +1,1442 @@
+<meta charset="utf-8">
+<title>مملكة الحديد</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+/* Layout: one full-screen "forge" stage — HUD on top, a single scene in the middle,
+   a dock (or scene controls) at the bottom. Dark-only by design: a furnace at night. */
+:root {
+  color-scheme: dark;
+  --bg: #0a0c11;
+  --bg2: #111622;
+  --panel: rgba(24, 31, 45, .78);
+  --panel2: rgba(34, 43, 62, .7);
+  --line: rgba(157, 180, 204, .16);
+  --line2: rgba(157, 180, 204, .3);
+  --fg: #eaeef4;
+  --mute: #9aa6b8;
+  --molten: #ff7a1a;
+  --ember: #ffb547;
+  --rust: #c8552f;
+  --steel: #9db4cc;
+  --magnet: #74b9ff;
+  --ok: #45d49b;
+  --bad: #ff6f7d;
+  --gold: #ffd27a;
+  --f-display: 'Reem Kufi', 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif;
+  --f-body: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, system-ui, sans-serif;
+  --f-mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  --t-xs: .78rem; --t-s: .9rem; --t-m: 1.02rem; --t-l: 1.2rem; --t-xl: 1.5rem; --t-2xl: 2rem; --t-3xl: 2.9rem;
+  --r: 14px;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font-family: var(--f-body); font-size: 16px; line-height: 1.65;
+  overflow: hidden; -webkit-font-smoothing: antialiased;
+}
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--ember); outline-offset: 3px; border-radius: 8px; }
+[tabindex="-1"]:focus { outline: none; }
+b { color: #fff; font-weight: 700; }
+sub, sup { font-size: .68em; line-height: 0; }
+.muted { color: var(--mute); font-size: var(--t-s); }
+
+#fx { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+.glow-floor { position: fixed; inset: auto 0 0 0; height: 55vh; z-index: 0; pointer-events: none;
+  background: radial-gradient(60% 70% at 50% 110%, rgba(255,122,26,.22), rgba(200,85,47,.06) 55%, transparent 75%); }
+.grid-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: .5;
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 44px 44px; mask-image: radial-gradient(80% 60% at 50% 40%, #000 20%, transparent 80%); -webkit-mask-image: radial-gradient(80% 60% at 50% 40%, #000 20%, transparent 80%); }
+
+#app { position: relative; z-index: 1; height: 100%; display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: minmax(0, 1fr); }
+
+/* ── HUD ── */
+.hud { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(10,12,17,.92), rgba(10,12,17,.6)); backdrop-filter: blur(8px); min-height: 58px; }
+.brand { font-family: var(--f-display); font-size: var(--t-l); display: flex; align-items: center; gap: 8px; white-space: nowrap; background: none; border: 0; padding: 4px; }
+.brand .ing { width: 22px; height: 12px; border-radius: 3px; background: linear-gradient(90deg, var(--rust), var(--molten), var(--ember)); box-shadow: 0 0 14px rgba(255,122,26,.7); }
+.hud-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.hud-mid .mt { font-size: var(--t-s); color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar { height: 6px; background: rgba(255,255,255,.07); border-radius: 99px; overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--rust), var(--molten), var(--ember)); border-radius: inherit; transition: width .5s ease; }
+.lvl { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 99px; padding: 4px 12px 4px 6px; white-space: nowrap; }
+.lvl .li { font-size: 1.15rem; }
+.lvl .ln { font-size: var(--t-xs); line-height: 1.2; }
+.lvl .ln small { display: block; color: var(--ember); font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.iconbtn { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; min-width: 40px; height: 40px; display: grid; place-items: center; font-size: 1.05rem; padding: 0 10px; }
+.iconbtn:hover { border-color: var(--line2); }
+
+/* ── Stage ── */
+.stage { position: relative; min-height: 0; overflow: hidden; }
+.view { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; padding: 20px 16px; }
+.scene-wrap { min-height: 100%; display: grid; place-items: center; }
+.scene { width: 100%; max-width: 720px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 14px; padding-block: 8px 24px; }
+.anim-in { animation: rise .45s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.big-ico { font-size: 3.6rem; line-height: 1; filter: drop-shadow(0 0 22px rgba(255,122,26,.45)); }
+.kicker { font-size: var(--t-xs); letter-spacing: .08em; color: var(--ember); text-transform: uppercase; display: inline-flex; gap: 6px; align-items: center; border: 1px solid rgba(255,181,71,.35); border-radius: 99px; padding: 2px 12px; background: rgba(255,181,71,.07); }
+.kicker.trap { color: var(--bad); border-color: rgba(255,111,125,.4); background: rgba(255,111,125,.08); }
+.kicker.predict { color: var(--magnet); border-color: rgba(116,185,255,.4); background: rgba(116,185,255,.08); }
+.kicker.recall { color: var(--ok); border-color: rgba(69,212,155,.4); background: rgba(69,212,155,.08); }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 700; margin: 0; text-wrap: balance; line-height: 1.3; }
+.sc-title { font-size: var(--t-2xl); }
+.q { font-family: var(--f-body); font-weight: 700; font-size: var(--t-l); line-height: 1.6; max-width: 60ch; text-wrap: balance; }
+.body { font-size: var(--t-m); max-width: 62ch; }
+.body p { margin: .4em 0; }
+.ayah { font-family: var(--f-display); font-size: var(--t-xl); color: var(--gold); text-shadow: 0 0 22px rgba(255,210,122,.3); }
+
+/* formulas */
+.fx { font-family: var(--f-mono); font-size: .92em; direction: ltr; unicode-bidi: isolate; white-space: nowrap; color: #ffe2c2; letter-spacing: -.01em; }
+.body .fx, .fb .fx, .deep .fx { white-space: normal; }
+.fx sub.st { color: var(--mute); }
+.arw { display: inline-flex; flex-direction: column; align-items: center; vertical-align: middle; margin: 0 .25em; line-height: 1; }
+.arw .al { font-size: .62em; color: var(--ember); white-space: nowrap; margin-bottom: 1px; font-family: var(--f-body); }
+.arw .ar { color: var(--ember); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.chip { border: 1px solid var(--line2); background: var(--panel); border-radius: 99px; padding: 3px 12px; font-size: var(--t-s); }
+.chips.big .chip { font-size: var(--t-m); padding: 6px 14px; }
+
+.split2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; max-width: 520px; margin: 8px auto; }
+.pane { border: 1px solid var(--line); background: var(--panel); border-radius: var(--r); padding: 12px; text-align: center; }
+.pane.hot { border-color: rgba(255,122,26,.45); box-shadow: inset 0 0 30px rgba(255,122,26,.08); }
+
+.podium { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 100%; max-width: 560px; margin-inline: auto; align-items: end; }
+.pod { border: 1px solid var(--line); background: var(--panel); border-radius: var(--r) var(--r) 6px 6px; padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; font-size: var(--t-s); }
+.pod:nth-child(1) { min-height: 150px; border-color: rgba(255,210,122,.5); }
+.pod:nth-child(2) { min-height: 125px; }
+.pod:nth-child(3) { min-height: 105px; }
+.pod .pn { font-family: var(--f-display); font-size: var(--t-2xl); color: var(--gold); line-height: 1.1; }
+.pod small { color: var(--mute); }
+
+.trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 100%; max-width: 560px; margin-inline: auto; }
+.ox { border-radius: var(--r); padding: 14px 6px; display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--line); font-size: var(--t-s); }
+.ox b { font-size: 1.15rem; }
+.ox-feo { background: linear-gradient(160deg, #1b1e25, #0d0f14); }
+.ox-fe2o3 { background: linear-gradient(160deg, #5a1d14, #2a0d09); border-color: rgba(200,85,47,.5); }
+.ox-fe3o4 { background: linear-gradient(160deg, #1a2030, #0b0e15); border-color: rgba(116,185,255,.4); }
+.ox small { color: var(--mute); }
+
+/* options */
+.opts { display: grid; gap: 10px; width: 100%; max-width: 600px; }
+.opt { display: flex; align-items: center; gap: 12px; text-align: start; width: 100%; border: 1px solid var(--line); background: var(--panel); border-radius: var(--r); padding: 12px 14px; font-size: var(--t-m); transition: border-color .15s, background .15s, transform .15s; }
+.opt:hover:not(:disabled) { border-color: rgba(255,181,71,.55); background: var(--panel2); }
+.opt .k { flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: rgba(255,255,255,.06); font-family: var(--f-display); font-size: var(--t-s); color: var(--ember); }
+.opt .ot { flex: 1; min-width: 0; }
+.opt.is-right { border-color: var(--ok); background: rgba(69,212,155,.12); }
+.opt.is-right .k { background: var(--ok); color: #062; }
+.opt.is-wrong { border-color: var(--bad); background: rgba(255,111,125,.1); opacity: .8; }
+.opt.is-wrong .k { background: var(--bad); color: #300; }
+.opt:disabled { cursor: default; }
+.shake { animation: shake .35s; }
+@keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+
+/* feedback */
+.fb { width: 100%; max-width: 600px; text-align: start; border-radius: var(--r); border: 1px solid var(--line); background: var(--panel); padding: 12px 14px; display: grid; gap: 8px; font-size: var(--t-s); }
+.fb.ok { border-color: rgba(69,212,155,.5); }
+.fb.bad { border-color: rgba(255,111,125,.5); }
+.fb-h { font-family: var(--f-display); font-size: var(--t-l); }
+.fb.ok .fb-h { color: var(--ok); }
+.fb.bad .fb-h { color: var(--bad); }
+.fb-row { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; }
+.fb-row > span:first-child { white-space: nowrap; color: var(--mute); font-size: var(--t-xs); padding-top: 2px; min-width: 96px; }
+.fb-row > div { min-width: 0; }
+.linkbtn { background: none; border: 0; color: var(--ember); text-decoration: underline; text-underline-offset: 3px; padding: 2px; font-size: var(--t-s); }
+
+/* buttons */
+.btn { border: 0; border-radius: 12px; padding: 12px 22px; font-weight: 700; font-size: var(--t-m); background: linear-gradient(180deg, #ff8c33, #e5600d); color: #1a0800; box-shadow: 0 6px 24px rgba(255,122,26,.3), inset 0 1px 0 rgba(255,255,255,.3); }
+.btn:hover:not(:disabled) { filter: brightness(1.08); }
+.btn:disabled { background: #2a3140; color: #6b7587; box-shadow: none; cursor: not-allowed; }
+.btn.ghost { background: var(--panel); color: var(--fg); border: 1px solid var(--line2); box-shadow: none; }
+.btn.small { padding: 8px 14px; font-size: var(--t-s); }
+.btn.pulse:not(:disabled) { animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 6px 34px rgba(255,122,26,.6), inset 0 1px 0 rgba(255,255,255,.3); } }
+.row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; align-items: center; }
+
+/* scene bar */
+.scenebar { display: flex; gap: 8px; align-items: center; padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); background: rgba(10,12,17,.88); backdrop-filter: blur(8px); }
+.scenebar .sp { flex: 1; }
+.scenebar .btn { min-width: 132px; }
+
+/* dock */
+.dock { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid var(--line); background: rgba(10,12,17,.9); backdrop-filter: blur(8px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.dock button { background: none; border: 0; padding: 8px 2px 9px; display: flex; flex-direction: column; align-items: center; gap: 1px; font-size: var(--t-xs); line-height: 1.25; text-align: center; color: var(--mute); position: relative; min-width: 0; }
+.dock button .di { font-size: 1.25rem; filter: grayscale(.4); }
+.dock button[aria-current="page"] { color: var(--fg); }
+.dock button[aria-current="page"] .di { filter: none; }
+.dock button[aria-current="page"]::before { content: ""; position: absolute; top: 0; inset-inline: 28%; height: 2px; background: var(--molten); border-radius: 2px; box-shadow: 0 0 10px var(--molten); }
+.badge { position: absolute; top: 4px; inset-inline-start: calc(50% + 6px); background: var(--molten); color: #1a0800; border-radius: 99px; font-size: 10px; font-weight: 700; padding: 0 5px; line-height: 16px; font-family: var(--f-mono); }
+
+/* ── Title ── */
+.title-screen { min-height: 100%; display: grid; place-items: center; text-align: center; }
+.title-inner { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.ingot { width: 120px; height: 46px; border-radius: 10px; position: relative; background: linear-gradient(90deg, #7a2a12, var(--molten) 40%, var(--ember) 60%, #7a2a12); box-shadow: 0 0 60px rgba(255,122,26,.55), 0 0 140px rgba(255,122,26,.25); animation: heat 4s ease-in-out infinite; transform: perspective(300px) rotateX(35deg); }
+@keyframes heat { 50% { filter: brightness(1.25); box-shadow: 0 0 80px rgba(255,122,26,.7), 0 0 180px rgba(255,122,26,.3); } }
+.title-screen h1 { font-size: var(--t-3xl); letter-spacing: .01em; text-shadow: 0 0 40px rgba(255,122,26,.35); }
+.latin { font-family: var(--f-mono); letter-spacing: .5em; font-size: var(--t-xs); color: var(--ember); direction: ltr; }
+.title-screen p { max-width: 34ch; color: var(--mute); margin: 0; }
+.fe-tile { width: 76px; height: 76px; border: 1px solid rgba(255,181,71,.5); border-radius: 12px; display: grid; place-items: center; position: relative; background: rgba(255,122,26,.06); direction: ltr; }
+.fe-tile b { font-family: var(--f-display); font-size: 2rem; color: var(--ember); }
+.fe-tile small { position: absolute; top: 4px; left: 7px; font-family: var(--f-mono); font-size: 11px; color: var(--mute); }
+.fe-tile i { position: absolute; bottom: 4px; font-style: normal; font-size: 10px; color: var(--mute); font-family: var(--f-mono); }
+
+/* ── Map ── */
+.map-view { padding: 0; display: grid; grid-template-columns: 1fr; }
+.map { position: relative; height: 100%; min-height: 520px; }
+.map svg.edges { position: absolute; inset: 0; width: 100%; height: 100%; }
+.map svg.edges line { stroke: var(--line2); stroke-width: 2; stroke-dasharray: 5 6; vector-effect: non-scaling-stroke; }
+.map svg.edges line.lit { stroke: var(--molten); stroke-dasharray: none; filter: drop-shadow(0 0 4px rgba(255,122,26,.7)); }
+.branch-lbl { position: absolute; top: 18%; transform: translateX(-50%); font-size: var(--t-xs); color: var(--mute); white-space: nowrap; letter-spacing: .03em; }
+.node { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: 0; padding: 4px; width: 116px; }
+.node .ni { width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; font-size: 1.6rem; background: var(--bg2); border: 2px solid var(--line2); position: relative; transition: transform .2s; }
+.node:hover .ni { transform: scale(1.06); }
+.node .nl { font-size: var(--t-xs); line-height: 1.35; text-align: center; color: var(--fg); text-wrap: balance; }
+.node .ns { position: absolute; bottom: -4px; inset-inline-end: -4px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; background: var(--bg2); border: 1px solid var(--line2); }
+.node.done .ni { border-color: var(--ok); box-shadow: 0 0 18px rgba(69,212,155,.25); }
+.node.done .ns { background: var(--ok); color: #062; border-color: var(--ok); }
+.node.current .ni { border-color: var(--molten); box-shadow: 0 0 0 6px rgba(255,122,26,.12), 0 0 28px rgba(255,122,26,.55); animation: beacon 2s ease-in-out infinite; }
+@keyframes beacon { 50% { box-shadow: 0 0 0 10px rgba(255,122,26,.05), 0 0 36px rgba(255,122,26,.7); } }
+.node.locked .ni { filter: grayscale(1) brightness(.6); border-style: dashed; }
+.node.locked .nl { color: var(--mute); }
+.node.side .ni { width: 46px; height: 46px; font-size: 1.25rem; border-style: dotted; }
+.node.final .ni { width: 70px; height: 70px; font-size: 2rem; border-color: var(--gold); }
+.node.sel .ni { outline: 2px solid var(--ember); outline-offset: 4px; }
+.map-tip { position: absolute; top: 10px; inset-inline: 16px; text-align: center; font-size: var(--t-s); color: var(--mute); }
+
+.sheet { position: absolute; inset-inline: 12px; bottom: 12px; z-index: 5; background: rgba(17,22,34,.96); border: 1px solid var(--line2); border-radius: 18px; padding: 16px; box-shadow: 0 -10px 40px rgba(0,0,0,.5); display: grid; gap: 10px; max-width: 520px; margin-inline: auto; animation: rise .3s both; }
+.sheet-h { display: flex; gap: 12px; align-items: center; }
+.sheet-h .si { font-size: 2rem; }
+.sheet-h h2 { font-size: var(--t-xl); }
+.sheet-h p { margin: 0; color: var(--mute); font-size: var(--t-s); }
+.sheet .x { margin-inline-start: auto; align-self: start; }
+.mastery { display: grid; gap: 6px; }
+.mrow { display: grid; grid-template-columns: 116px 1fr 40px; gap: 8px; align-items: center; font-size: var(--t-xs); }
+.mrow .bar { height: 8px; }
+.mrow.u .bar > i { background: linear-gradient(90deg, #2f7dd1, var(--magnet)); }
+.mrow.p .bar > i { background: linear-gradient(90deg, var(--rust), var(--molten)); }
+.mrow.e .bar > i { background: linear-gradient(90deg, #1d9c6b, var(--ok)); }
+.mrow b { font-family: var(--f-mono); font-weight: 500; font-variant-numeric: tabular-nums; color: var(--mute); font-size: 11px; text-align: end; }
+.note { font-size: var(--t-xs); color: var(--mute); }
+
+/* ── panels / generic interactive ── */
+.panel { width: 100%; max-width: 640px; border: 1px solid var(--line); background: var(--panel); border-radius: 18px; padding: 14px; }
+.given { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.given span { border: 1px dashed var(--line2); border-radius: 10px; padding: 4px 10px; font-size: var(--t-s); }
+.num-in { width: 160px; text-align: center; font-family: var(--f-mono); font-size: var(--t-xl); background: var(--bg2); border: 1px solid var(--line2); border-radius: 12px; padding: 8px; direction: ltr; }
+.step-done { color: var(--ok); font-size: var(--t-s); }
+
+.order-slots { display: grid; gap: 8px; width: 100%; max-width: 560px; }
+.slot { display: flex; align-items: center; gap: 10px; min-height: 48px; border: 1px dashed var(--line2); border-radius: 12px; padding: 8px 12px; text-align: start; font-size: var(--t-s); }
+.slot .sn { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.06); font-family: var(--f-mono); font-size: 12px; color: var(--ember); }
+.slot.filled { border-style: solid; border-color: rgba(69,212,155,.5); background: rgba(69,212,155,.07); }
+.pool { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; width: 100%; max-width: 640px; }
+.tok { border: 1px solid var(--line2); background: var(--panel2); border-radius: 12px; padding: 8px 14px; font-size: var(--t-s); max-width: 100%; }
+.tok:hover:not(:disabled) { border-color: var(--ember); }
+.tok.sel { border-color: var(--ember); background: rgba(255,181,71,.14); box-shadow: 0 0 0 3px rgba(255,181,71,.15); }
+.tok:disabled { opacity: .35; cursor: default; }
+
+.match { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; width: 100%; max-width: 640px; }
+.match .col { display: grid; gap: 8px; align-content: start; }
+.match .tok { width: 100%; text-align: center; min-height: 46px; }
+.tok.m0 { border-color: #45d49b; background: rgba(69,212,155,.12); }
+.tok.m1 { border-color: #74b9ff; background: rgba(116,185,255,.12); }
+.tok.m2 { border-color: #ffb547; background: rgba(255,181,71,.12); }
+.tok.m3 { border-color: #ff8fb1; background: rgba(255,143,177,.12); }
+.tok.m4 { border-color: #c6a7ff; background: rgba(198,167,255,.12); }
+
+.bins { display: grid; gap: 10px; width: 100%; max-width: 680px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.bin { border: 1px solid var(--line2); background: rgba(255,255,255,.03); border-radius: 14px; padding: 10px; min-height: 90px; display: flex; flex-direction: column; gap: 6px; text-align: center; }
+.bin > button.bh { background: none; border: 0; font-family: var(--f-display); font-size: var(--t-m); padding: 4px; border-radius: 8px; }
+.bin.target { border-color: var(--ember); box-shadow: inset 0 0 24px rgba(255,181,71,.08); }
+.bin .in { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.bin .in span { font-size: var(--t-xs); border-radius: 8px; padding: 3px 8px; background: rgba(69,212,155,.12); border: 1px solid rgba(69,212,155,.4); }
+
+.flips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; width: 100%; max-width: 560px; }
+.flip { min-height: 150px; border-radius: 16px; border: 1px solid var(--line2); background: var(--panel2); padding: 12px; font-size: var(--t-s); line-height: 1.6; }
+.flip.open { background: var(--panel); }
+.flip.open.red { border-color: rgba(200,85,47,.7); box-shadow: inset 0 0 30px rgba(200,85,47,.15); }
+.flip.open.black { border-color: rgba(116,185,255,.45); }
+.flip.open.grey { border-color: rgba(157,180,204,.55); }
+.flip.open.yellow { border-color: rgba(255,210,122,.6); box-shadow: inset 0 0 30px rgba(255,210,122,.08); }
+.flip:not(.open) { font-size: var(--t-m); }
+
+textarea.teach { width: 100%; max-width: 600px; min-height: 110px; resize: vertical; background: var(--bg2); border: 1px solid var(--line2); border-radius: 14px; padding: 12px; line-height: 1.7; }
+.model { width: 100%; max-width: 600px; text-align: start; border-inline-start: 3px solid var(--ember); background: var(--panel); border-radius: 10px; padding: 12px 14px; font-size: var(--t-s); }
+.cp-inputs { display: grid; gap: 8px; width: 100%; max-width: 480px; }
+.cp-inputs input { background: var(--bg2); border: 1px solid var(--line2); border-radius: 12px; padding: 10px 12px; }
+
+/* boss */
+.boss-h { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; max-width: 560px; }
+.boss-ico { font-size: 4rem; line-height: 1; filter: drop-shadow(0 0 26px rgba(255,111,125,.45)); transition: transform .2s; }
+.boss-ico.hit { animation: hit .45s; }
+@keyframes hit { 30% { transform: scale(.86) rotate(-6deg); filter: drop-shadow(0 0 30px rgba(255,210,122,.9)) brightness(1.6); } }
+.hp { display: flex; gap: 4px; width: 100%; max-width: 360px; }
+.hp i { flex: 1; height: 10px; border-radius: 3px; background: linear-gradient(90deg, #b8233a, var(--bad)); box-shadow: 0 0 10px rgba(255,111,125,.4); transition: opacity .4s, filter .4s; }
+.hp i.gone { opacity: .15; filter: grayscale(1); box-shadow: none; }
+.step-chip { font-size: var(--t-xs); color: var(--gold); border: 1px solid rgba(255,210,122,.4); border-radius: 99px; padding: 2px 10px; }
+
+/* labs */
+.lab-tag { color: var(--ember); }
+.prep-grid { width: 100%; max-width: 680px; overflow-x: auto; }
+.prep-grid table { width: 100%; border-collapse: separate; border-spacing: 4px; font-size: var(--t-xs); }
+.prep-grid th { font-weight: 500; color: var(--mute); padding: 4px; }
+.prep-grid thead th { color: var(--fg); font-family: var(--f-display); font-size: var(--t-s); }
+.cell { width: 100%; min-height: 38px; border-radius: 9px; border: 1px solid var(--line2); background: var(--panel2); font-size: var(--t-xs); padding: 4px; }
+.cell.ok { border-color: var(--ok); background: rgba(69,212,155,.14); }
+.cell.no { border-color: var(--bad); background: rgba(255,111,125,.14); }
+.cell.na { border: 0; background: none; color: var(--mute); cursor: default; }
+.cell.unset { color: var(--mute); }
+
+.seg { display: inline-flex; border: 1px solid var(--line2); border-radius: 10px; overflow: hidden; }
+.seg button { background: none; border: 0; padding: 6px 10px; font-size: var(--t-s); color: var(--mute); }
+.seg button + button { border-inline-start: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: rgba(255,181,71,.16); color: var(--fg); }
+.pred-rows { display: grid; gap: 8px; width: 100%; max-width: 520px; }
+.pred-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-size: var(--t-s); }
+.charts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: 100%; max-width: 600px; }
+.chart { border: 1px solid var(--line); border-radius: 12px; background: rgba(0,0,0,.25); padding: 6px; }
+.chart svg { width: 100%; height: auto; display: block; }
+.chart .ct { font-size: 11px; color: var(--mute); }
+.chart path { fill: none; stroke: var(--molten); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.chart path.drawn { stroke-dasharray: 400; stroke-dashoffset: 400; animation: draw 1.4s ease forwards; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.chart .ax { stroke: var(--steel); stroke-width: 1; fill: none; }
+.chart text { fill: var(--mute); font-size: 8px; font-family: var(--f-mono); }
+
+.stair svg, .chart svg, .lattice svg { direction: ltr; }
+.stair svg { width: 100%; max-width: 420px; height: auto; display: block; margin-inline: auto; }
+.stair .st-line { stroke: var(--steel); stroke-width: 2; fill: none; }
+.stair .lbl { fill: var(--fg); font-family: var(--f-mono); font-size: 12px; }
+.stair .ox { fill: var(--mute); font-family: var(--f-mono); font-size: 9px; }
+.stair .tokg { transition: transform .8s cubic-bezier(.3,.8,.3,1); }
+.stair .tokc { fill: var(--molten); filter: drop-shadow(0 0 8px var(--molten)); }
+.tasks { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.tasks .tok.done { border-color: var(--ok); color: var(--ok); }
+.act-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+
+.bench-log { overflow-x: auto; width: 100%; max-width: 560px; }
+.bench-log table { border-collapse: collapse; font-size: 11px; margin-inline: auto; direction: ltr; }
+.bench-log td, .bench-log th { border: 1px solid var(--line); padding: 3px 6px; text-align: center; font-weight: 500; }
+.bench-log th { color: var(--mute); }
+.bench-log td.y { color: var(--ok); } .bench-log td.n { color: var(--bad); } .bench-log td.x { color: #4a5263; }
+.result { width: 100%; max-width: 600px; border-radius: 14px; padding: 12px; border: 1px solid var(--line2); background: var(--panel); text-align: start; font-size: var(--t-s); display: grid; gap: 6px; }
+.bubbles { display: inline-block; animation: fizz 1.2s ease-in-out infinite; }
+@keyframes fizz { 50% { transform: translateY(-4px); } }
+
+.lattice svg { width: 100%; max-width: 360px; height: auto; display: block; margin-inline: auto; }
+.tabs { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+.tabs .tok[aria-selected="true"] { border-color: var(--ember); background: rgba(255,181,71,.14); }
+.hook { width: 100%; max-width: 600px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; text-align: start; font-size: var(--t-s); }
+.hook > div { border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: var(--panel); }
+.hook > div:first-child { border-style: dashed; }
+.hook h4 { margin: 0 0 4px; font-size: var(--t-s); }
+
+.ptgrid { direction: ltr; display: grid; grid-template-columns: repeat(7, 34px); grid-auto-rows: 30px; gap: 0; margin: 0 auto; }
+.ptgrid span { border: 1px solid var(--line2); display: grid; place-items: center; font-family: var(--f-mono); font-size: 13px; color: var(--ember); }
+.ptgrid span.e { border-color: transparent; }
+
+/* overlays */
+.ovl { position: fixed; inset: 0; z-index: 50; background: rgba(4,6,10,.72); backdrop-filter: blur(6px); display: grid; place-items: center; padding: 16px; animation: fadein .2s; }
+@keyframes fadein { from { opacity: 0; } }
+.ovl-box { width: 100%; max-width: 780px; max-height: 100%; overflow: auto; background: #10151f; border: 1px solid var(--line2); border-radius: 18px; padding: 18px; position: relative; }
+.ovl-box.small { max-width: 520px; }
+.ovl-h { display: flex; align-items: center; gap: 10px; position: sticky; top: -18px; background: #10151f; padding-block: 6px; margin-top: -6px; z-index: 1; }
+.ovl-h h2 { font-size: var(--t-xl); flex: 1; }
+.deep { font-size: var(--t-s); line-height: 1.85; }
+.deep h3 { font-size: var(--t-l); margin: 14px 0 6px; color: var(--ember); }
+.deep h4 { font-family: var(--f-body); font-weight: 700; font-size: var(--t-m); margin: 14px 0 4px; }
+.deep p { margin: 6px 0; }
+.deep ul, .deep ol { padding-inline-start: 1.3em; margin: 6px 0; }
+.tblwrap { overflow-x: auto; }
+.tbl { width: 100%; border-collapse: collapse; font-size: var(--t-s); margin: 6px 0; }
+.tbl th, .tbl td { border: 1px solid var(--line); padding: 6px 8px; text-align: start; vertical-align: top; }
+.tbl thead th { background: rgba(255,122,26,.1); color: var(--ember); font-weight: 700; }
+.tbl tbody th { color: var(--mute); font-weight: 500; white-space: nowrap; }
+ul.left { text-align: start; }
+
+/* toasts */
+#toasts { position: fixed; z-index: 60; top: calc(66px + env(safe-area-inset-top, 0px)); left: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; }
+.toast { background: rgba(17,22,34,.96); border: 1px solid rgba(255,181,71,.45); border-radius: 99px; padding: 6px 16px; font-size: var(--t-s); box-shadow: 0 8px 30px rgba(0,0,0,.4); animation: toast 2.6s ease forwards; }
+.toast.lvlup { border-color: var(--gold); color: var(--gold); font-family: var(--f-display); font-size: var(--t-m); }
+@keyframes toast { 0% { opacity: 0; transform: translateY(-8px); } 10%, 82% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateY(-6px); } }
+
+/* lists (labs / exam / review) */
+.page { width: 100%; max-width: 760px; margin-inline: auto; display: grid; gap: 14px; padding-bottom: 20px; }
+.page-h { text-align: center; display: grid; gap: 6px; justify-items: center; }
+.page-h h1 { font-size: var(--t-2xl); }
+.page-h p { margin: 0; color: var(--mute); max-width: 52ch; }
+.cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+.card { text-align: start; border: 1px solid var(--line); background: var(--panel); border-radius: 14px; padding: 12px; display: grid; gap: 4px; }
+.card:hover { border-color: var(--line2); }
+.card .ct { font-family: var(--f-display); font-size: var(--t-m); }
+.card .cs { font-size: var(--t-xs); color: var(--mute); }
+.card.done { border-color: rgba(69,212,155,.4); }
+.filter { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.filter .tok[aria-pressed="true"] { border-color: var(--ember); background: rgba(255,181,71,.14); }
+.score { font-family: var(--f-display); font-size: var(--t-3xl); color: var(--ember); line-height: 1; }
+.fcard { width: 100%; max-width: 520px; min-height: 200px; border-radius: 18px; border: 1px solid var(--line2); background: linear-gradient(160deg, #182033, #0f141f); padding: 20px; display: grid; place-items: center; gap: 10px; text-align: center; font-size: var(--t-l); }
+.fcard .back { color: var(--ember); font-size: var(--t-m); }
+
+/* model */
+.model-tree { display: grid; gap: 10px; justify-items: center; width: 100%; max-width: 820px; margin-inline: auto; }
+.mnode { border: 1px solid var(--line2); background: var(--panel); border-radius: 14px; padding: 10px 14px; text-align: center; display: grid; gap: 2px; }
+.mnode.on { border-color: rgba(255,122,26,.6); box-shadow: 0 0 22px rgba(255,122,26,.18); }
+.mnode .mt { font-family: var(--f-display); }
+.mnode small { color: var(--mute); font-size: var(--t-xs); }
+.mbranches { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; width: 100%; }
+.mbranch { display: grid; gap: 8px; align-content: start; justify-items: stretch; }
+.mbranch > .bt { text-align: center; font-size: var(--t-xs); color: var(--mute); letter-spacing: .03em; }
+.vline { width: 2px; height: 16px; background: linear-gradient(var(--molten), transparent); margin-inline: auto; }
+.mchips { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
+.mchips span { font-size: 11px; border-radius: 99px; padding: 1px 8px; border: 1px solid var(--line); color: var(--mute); }
+.mnode.on .mchips span { color: var(--fg); border-color: rgba(255,181,71,.35); }
+
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+@media (max-width: 560px) {
+  :root { --t-2xl: 1.6rem; --t-3xl: 2.3rem; --t-l: 1.1rem; }
+  .hud { gap: 8px; padding: 8px 12px; }
+  .brand span.bt { display: none; }
+  .lvl .ln { display: none; }
+  .node { width: 84px; }
+  .node .ni { width: 50px; height: 50px; font-size: 1.35rem; }
+  .node.final .ni { width: 58px; height: 58px; }
+  .scenebar .btn { min-width: 108px; padding-inline: 14px; }
+  .charts { grid-template-columns: 1fr 1fr 1fr; }
+  .hook { grid-template-columns: 1fr; }
+  .mrow { grid-template-columns: 96px 1fr 36px; }
+  .ptgrid { grid-template-columns: repeat(7, 30px); grid-auto-rows: 28px; }
+}
+@media (min-width: 900px) {
+  .map-view.has-sheet { grid-template-columns: 1fr 380px; }
+  .map-view.has-sheet .sheet { position: relative; inset: auto; margin: 16px; align-self: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+.rm *, .rm *::before, .rm *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+</style>
+
+<canvas id="fx" aria-hidden="true"></canvas>
+<div class="glow-floor" aria-hidden="true"></div>
+<div class="grid-bg" aria-hidden="true"></div>
+<div id="app" dir="rtl" lang="ar"></div>
+<div id="toasts" aria-live="polite"></div>
+<div id="live" class="sr" aria-live="assertive"></div>
+
+<script src="content.js" charset="utf-8"></script>
+<script>
+(function () {
+'use strict';
+const C = window.IQ_CONTENT;
+document.documentElement.lang = 'ar';
+document.documentElement.dir = 'rtl';
+
+/* ───────── data prep ───────── */
+const MIS = {};
+C.MISSIONS.forEach(m => { MIS[m.id] = m; });
+MIS.final = {
+  id: 'final', icon: C.FINAL.icon, title: C.FINAL.title, sub: C.FINAL.sub, branch: 'final', req: C.FINAL.req,
+  lecture: 'المحاضرتان 4 و 5', concepts: ['كل الطريق'],
+  scenes: [
+    { t: 'story', icon: '🏆', kicker: 'الزعيم النهائي', title: C.FINAL.title,
+      body: '<p>' + C.FINAL.intro + '</p><div class="chips"><span class="chip">1. حدد المادة</span><span class="chip">2. فسّر المعلومة</span><span class="chip">3. اختر المعادلة</span><span class="chip">4. الحساب</span><span class="chip">5. توقّع النتيجة</span><span class="chip">6. اشرح ليه</span></div>',
+      btn: 'ادخل المسبك' },
+    { t: 'boss', icon: '🏭', name: 'المسبك الأخير', intro: 'مفيش تايمر. خد وقتك وفكّر في كل خطوة.', qs: C.FINAL.steps, final: true },
+    { t: 'teach', icon: '🎤', prompt: C.FINAL.teach.prompt, model: C.FINAL.teach.model },
+    { t: 'finale' }
+  ],
+  deep: C.MISSIONS.filter(m => m.branch !== 'side').map(m => m.deep).join('<hr style="border:0;border-top:1px solid var(--line);margin:18px 0">')
+};
+const ORDER = ['identity', 'ores', 'prep', 'furnaces', 'steel', 'reactions', 'oxides', 'transform', 'final'];
+const POS = { identity: [50, 14], flashback: [12, 86], ores: [74, 30], prep: [74, 48], furnaces: [74, 66], steel: [74, 83], reactions: [26, 30], oxides: [26, 48], transform: [26, 66], final: [50, 91] };
+const EDGES = [['identity', 'ores'], ['identity', 'reactions'], ['ores', 'prep'], ['prep', 'furnaces'], ['furnaces', 'steel'], ['reactions', 'oxides'], ['oxides', 'transform'], ['steel', 'final'], ['transform', 'final']];
+C.EXAM.forEach((q, i) => { q.id = 'x' + i; });
+const CARDS = [];
+C.MISSIONS.forEach(m => (m.cards || []).forEach((c, i) => CARDS.push({ id: m.id + ':' + i, m: m.id, f: c[0], b: c[1] })));
+
+const XP = { mcq: 10, order: 10, match: 10, flip: 5, sort: 15, lab: 20, calc: 20, teach: 10, checkpoint: 5, boss: 50, exam: 15 };
+const KIND = { mcq: '🧠 مفهوم', order: '🧠 مفهوم', match: '🧠 مفهوم', flip: '🧠 مفهوم', sort: '🧪 معمل', lab: '🧪 معمل', calc: '🧮 حساب', teach: '🎤 شرح', checkpoint: '☕ استرجاع', boss: '⚔️ زعيم', exam: '🎯 امتحان' };
+const U_TYPES = new Set(['mcq', 'order', 'match', 'flip', 'teach']);
+const P_TYPES = new Set(['lab', 'calc', 'sort', 'boss']);
+const AR_KEYS = ['أ', 'ب', 'ج', 'د', 'هـ'];
+
+/* ───────── state ───────── */
+const KEY = 'ironQuest.v1';
+function fresh() { return { v: 1, xp: 0, sc: {}, pos: {}, done: {}, exam: {}, cards: {}, notes: {}, rm: false, revDay: '', started: false }; }
+let S = fresh();
+try { const raw = localStorage.getItem(KEY); if (raw) S = Object.assign(fresh(), JSON.parse(raw)); } catch (e) { /* storage unavailable: play without saving */ }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { } }
+
+let V = { name: 'title' };
+
+/* ───────── utils ───────── */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function chem(src) {
+  const arrows = [];
+  let s = src.replace(/-\[([^\]]*)\]->/g, (m, l) => { arrows.push(l); return '\u0001' + (arrows.length - 1) + '\u0002'; })
+             .replace(/->/g, () => { arrows.push(''); return '\u0001' + (arrows.length - 1) + '\u0002'; });
+  s = esc(s);
+  s = s.replace(/([A-Za-z\)\]])(\d+)/g, '$1<sub>$2</sub>');
+  s = s.replace(/\((s|g|l|aq|v)\)/g, '<sub class="st">($1)</sub>');
+  s = s.replace(/\^([+-]?\d*[+-]?)/g, '<sup>$1</sup>');
+  s = s.replace(/\u0001(\d+)\u0002/g, (m, i) => '<span class="arw">' + (arrows[i] ? '<span class="al">' + esc(arrows[i]) + '</span>' : '') + '<span class="ar">⟶</span></span>');
+  return '<bdi class="fx" dir="ltr">' + s + '</bdi>';
+}
+function F(html) { return String(html == null ? '' : html).replace(/\$([^$]+)\$/g, (m, x) => chem(x)); }
+function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; }
+function announce(t) { const l = $('#live'); l.textContent = ''; setTimeout(() => { l.textContent = t.replace(/<[^>]+>/g, ''); }, 30); }
+function reduced() { return S.rm || window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+
+function level(xp) { let L = C.LEVELS[0], N = null; for (let i = 0; i < C.LEVELS.length; i++) { if (xp >= C.LEVELS[i].xp) { L = C.LEVELS[i]; N = C.LEVELS[i + 1] || null; } } return { L, N }; }
+function toast(t, cls) { const d = el('<div class="toast ' + (cls || '') + '">' + F(t) + '</div>'); $('#toasts').appendChild(d); setTimeout(() => d.remove(), 2700); }
+function addXP(n, kind) {
+  if (!n) return;
+  const before = level(S.xp).L;
+  S.xp += n; save();
+  toast((kind || '') + ' <b>+' + n + ' XP</b>');
+  const after = level(S.xp).L;
+  if (after !== before) setTimeout(() => toast('⬆️ ترقية: ' + after.icon + ' ' + after.name, 'lvlup'), 500);
+  updateHUD();
+}
+function finish(key, type, r, xpOverride) {
+  if (S.sc[key] && S.sc[key].d) return false;
+  S.sc[key] = { d: 1, r: Math.max(0, Math.min(1, r)) };
+  save();
+  const n = xpOverride != null ? xpOverride : Math.round((XP[type] || 0) * (type === 'boss' ? 1 : Math.max(.5, r)));
+  addXP(n, KIND[type]);
+  return true;
+}
+function reqMet(id) { return (MIS[id].req || []).every(r => S.done[r]); }
+function status(id) { if (S.done[id]) return 'done'; if (reqMet(id)) return 'open'; return 'locked'; }
+function currentMission() { return ORDER.find(id => !S.done[id] && reqMet(id)) || null; }
+function scenesOf(id) { const m = MIS[id]; return id === 'final' ? m.scenes : m.scenes.concat([{ t: 'complete' }]); }
+function mastery(id) {
+  const m = MIS[id]; const u = [0, 0], p = [0, 0];
+  m.scenes.forEach((sc, i) => { const rec = S.sc[id + ':' + i]; const r = rec ? rec.r : 0; if (U_TYPES.has(sc.t)) { u[0] += r; u[1]++; } else if (P_TYPES.has(sc.t)) { p[0] += r; p[1]++; } });
+  const ex = C.EXAM.filter(q => q.m === id);
+  return { u, p, e: [ex.filter(q => S.exam[q.id] === 1).length, ex.length] };
+}
+function masteryHTML(id) {
+  const M = mastery(id);
+  const row = (cls, lbl, v) => { const pct = v[1] ? Math.round(100 * v[0] / v[1]) : null; return '<div class="mrow ' + cls + '"><span>' + lbl + '</span><div class="bar"><i style="width:' + (pct || 0) + '%"></i></div><b>' + (pct == null ? '—' : pct + '%') + '</b></div>'; };
+  return '<div class="mastery">' + row('u', '🧠 الفهم', M.u) + row('p', '🧪 المسائل والمعامل', M.p) + row('e', '🎯 جاهزية الامتحان', M.e) + '<div class="note">مؤشرات لعب تقريبية، مش قياس علمي.</div></div>';
+}
+function dueCards() { const now = Date.now(); return CARDS.filter(c => startedMission(c.m) && (!S.cards[c.id] || S.cards[c.id].due <= now)); }
+function startedMission(id) { return Object.keys(S.sc).some(k => k.startsWith(id + ':')); }
+
+/* ───────── shell ───────── */
+const app = $('#app');
+function shell(mode) {
+  app.innerHTML = '';
+  const hud = el('<header class="hud"></header>');
+  app.appendChild(hud);
+  const stage = el('<main class="stage" id="stage"></main>');
+  app.appendChild(stage);
+  if (mode === 'mission') app.appendChild(el('<nav class="scenebar" id="scenebar" aria-label="تحكم المشهد"></nav>'));
+  else if (mode !== 'title') app.appendChild(dock());
+  else app.appendChild(el('<div></div>'));
+  updateHUD();
+  return stage;
+}
+function updateHUD() {
+  const hud = $('.hud'); if (!hud) return;
+  const { L, N } = level(S.xp);
+  const pct = N ? Math.round(100 * (S.xp - L.xp) / (N.xp - L.xp)) : 100;
+  let mid = '';
+  if (V.name === 'mission') {
+    const m = MIS[V.id]; const list = scenesOf(V.id);
+    mid = '<div class="mt">' + m.icon + ' ' + esc(m.title) + ' • المشهد ' + (V.i + 1) + ' من ' + list.length + '</div><div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="' + list.length + '" aria-valuenow="' + (V.i + 1) + '"><i style="width:' + Math.round(100 * (V.i + 1) / list.length) + '%"></i></div>';
+  } else if (V.name !== 'title') {
+    mid = '<div class="mt">' + L.icon + ' ' + L.name + (N ? ' • ' + (N.xp - S.xp) + ' XP للمستوى الجاي' : ' • أعلى مستوى') + '</div><div class="bar"><i style="width:' + pct + '%"></i></div>';
+  }
+  hud.innerHTML =
+    (V.name === 'mission' ? '<button class="iconbtn" id="h-exit" aria-label="الرجوع للخريطة">🗺️</button>' : '<button class="brand" id="h-home" aria-label="الشاشة الرئيسية"><span class="ing"></span><span class="bt">مملكة الحديد</span></button>') +
+    '<div class="hud-mid">' + mid + '</div>' +
+    '<div class="lvl" title="المستوى"><span class="li">' + L.icon + '</span><span class="ln">' + L.name + '<small>' + S.xp + ' XP</small></span></div>' +
+    '<button class="iconbtn" id="h-set" aria-label="الإعدادات والمصادر">⚙️</button>';
+  const ex = $('#h-exit'); if (ex) ex.onclick = () => go({ name: 'map', sel: V.id });
+  const hm = $('#h-home'); if (hm) hm.onclick = () => go({ name: 'title' });
+  $('#h-set').onclick = settings;
+}
+function dock() {
+  const due = dueCards().length;
+  const items = [['map', '🗺️', 'الرحلة'], ['labs', '🧪', 'المعمل'], ['exam', '🎯', 'الامتحان'], ['review', '🔁', 'مراجعة'], ['model', '🌌', 'الصورة الكاملة']];
+  const d = el('<nav class="dock" aria-label="الأوضاع"></nav>');
+  items.forEach(([n, i, t]) => {
+    const b = el('<button type="button"><span class="di">' + i + '</span><span>' + t + '</span>' + (n === 'review' && due ? '<span class="badge">' + due + '</span>' : '') + '</button>');
+    if (V.name === n || (n === 'labs' && V.name === 'sandbox')) b.setAttribute('aria-current', 'page');
+    b.onclick = () => go({ name: n });
+    d.appendChild(b);
+  });
+  return d;
+}
+function go(v) { V = v; render(); }
+function render() {
+  const r = { title: rTitle, map: rMap, mission: rMission, labs: rLabs, sandbox: rSandbox, exam: rExam, review: rReview, model: rModel }[V.name] || rMap;
+  r();
+  document.body.classList.toggle('rm', !!S.rm);
+}
+
+/* ───────── overlays ───────── */
+let lastFocus = null;
+function overlay(title, html, small) {
+  closeOverlay();
+  lastFocus = document.activeElement;
+  const o = el('<div class="ovl" role="dialog" aria-modal="true" aria-label="' + esc(title.replace(/<[^>]+>/g, '')) + '"><div class="ovl-box ' + (small ? 'small' : '') + '"><div class="ovl-h"><h2>' + F(title) + '</h2><button class="iconbtn" data-close aria-label="إغلاق">✕</button></div><div class="deep">' + F(html) + '</div></div></div>');
+  o.addEventListener('click', e => { if (e.target === o || e.target.closest('[data-close]')) closeOverlay(); });
+  document.body.appendChild(o);
+  $('[data-close]', o).focus();
+  return o;
+}
+function closeOverlay() { const o = $('.ovl'); if (o) { o.remove(); if (lastFocus && document.contains(lastFocus)) lastFocus.focus(); } }
+function settings() {
+  const o = overlay('⚙️ الإعدادات والمصادر', `
+    <h4>الحركة</h4>
+    <p><label><input type="checkbox" id="set-rm" ${S.rm ? 'checked' : ''}> تقليل الحركة والأنيميشن</label></p>
+    <h4>📚 المصادر اللي اتبنت منها اللعبة</h4>
+    <ul>
+      <li>صفحات كتاب «الباب الأول – العناصر الانتقالية» (المحاضرتان الرابعة والخامسة) — صور الكتاب.</li>
+      <li>ملخص «استخلاص الحديد والسبائك» (PDF).</li>
+      <li>ملخص «الخواص الكيميائية للحديد وأكاسيده» (PDF).</li>
+      <li>صفحات الكشكول المكتوبة بخط اليد (مخططات الأكاسيد واستخدامات العناصر).</li>
+    </ul>
+    <h4>⚖️ تعارضات اتحلّت لصالح الكتاب</h4>
+    <ul>
+      <li>ملخص الـ PDF قال إن $Fe3O4$ يتفاعل مع $H2SO4$ <b>المخفف</b>، لكن جدوله نفسه والكتاب (ص 133–134) والكشكول بيقولوا: يتفاعل مع <b>المركز الساخن</b> فقط. اللعبة ماشية بالكتاب.</li>
+      <li>تدريب «التلبيد والتكسير» وتدريب «العمليتين X و Y» كانوا مدموجين في الـ PDF؛ اتفصلوا زي الكتاب (الإجابتين د).</li>
+      <li>تدريب التمييز بالـ $H2SO4(aq)$ هو بين <b>النحاس الأصفر</b> و<b>سبيكة النيكل والصلب</b> (زي الكتاب ص 109).</li>
+      <li>درجة تحويل $Fe(OH)3$ إلى $Fe2O3$: أعلى من <b>200°C</b> (الكتاب).</li>
+    </ul>
+    <h4>إعادة البدء</h4>
+    <p class="muted">بيمسح كل تقدمك المحفوظ على الجهاز ده.</p>
+    <div class="row" style="justify-content:flex-start"><button class="btn ghost small" id="set-reset">🗑️ امسح التقدم</button><span id="set-confirm"></span></div>`, true);
+  $('#set-rm', o).onchange = e => { S.rm = e.target.checked; save(); document.body.classList.toggle('rm', S.rm); };
+  $('#set-reset', o).onclick = () => {
+    $('#set-confirm', o).innerHTML = '<button class="btn small" id="set-yes">أيوه، امسح</button>';
+    $('#set-yes', o).onclick = () => { S = fresh(); save(); closeOverlay(); go({ name: 'title' }); };
+  };
+}
+
+/* ───────── title ───────── */
+function rTitle() {
+  const st = shell('title');
+  const has = S.started;
+  st.appendChild(el(`<section class="view"><div class="title-screen"><div class="title-inner anim-in">
+    <div class="fe-tile" aria-hidden="true"><small>26</small><b>Fe</b><i>55.85</i></div>
+    <div class="latin">IRON QUEST</div>
+    <h1>مملكة الحديد</h1>
+    <p>من الخام في باطن الأرض… للفرن… للسبيكة… لحد آخر تفاعل.</p>
+    <div class="row"><button class="btn pulse" id="t-start">${has ? 'كمّل الرحلة' : 'ابدأ الرحلة'}</button></div>
+    <p class="muted">الباب الأول • العناصر الانتقالية • المحاضرتان 4 و 5</p>
+  </div></div></section>`));
+  $('#t-start').onclick = () => { S.started = true; save(); go({ name: 'map', sel: currentMission() }); };
+  $('#t-start').focus();
+}
+
+/* ───────── map ───────── */
+function rMap() {
+  if (V.sel === undefined) V.sel = currentMission();
+  const st = shell('map');
+  const view = el('<section class="view map-view" aria-label="خريطة الرحلة"></section>');
+  st.appendChild(view);
+  const map = el('<div class="map"></div>');
+  view.appendChild(map);
+  const cur = currentMission();
+  let svg = '<svg class="edges" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">';
+  EDGES.forEach(([a, b]) => { svg += '<line x1="' + POS[a][0] + '" y1="' + POS[a][1] + '" x2="' + POS[b][0] + '" y2="' + POS[b][1] + '" class="' + (S.done[a] ? 'lit' : '') + '"/>'; });
+  map.innerHTML = svg + '</svg>' +
+    '<div class="branch-lbl" style="left:74%">⛏️ طريق الاستخلاص</div><div class="branch-lbl" style="left:26%">🧪 طريق الكيمياء</div>' +
+    '<div class="map-tip">' + (cur ? 'المهمة الحالية: ' + MIS[cur].icon + ' ' + esc(MIS[cur].title) : '🏆 خلّصت الرحلة كلها! جرّب الامتحان أو المراجعة.') + '</div>';
+  Object.keys(POS).forEach(id => {
+    const m = MIS[id]; const s = status(id);
+    const cls = ['node', s, id === cur ? 'current' : '', m.branch === 'side' ? 'side' : '', id === 'final' ? 'final' : '', V.sel === id ? 'sel' : ''].join(' ');
+    const badge = s === 'done' ? '✓' : s === 'locked' ? '🔒' : id === cur ? '●' : '';
+    const b = el('<button class="' + cls + '" style="left:' + POS[id][0] + '%;top:' + POS[id][1] + '%" aria-label="' + esc(m.title) + ' — ' + ({ done: 'مكتملة', open: 'متاحة', locked: 'مقفولة' }[s]) + '"><span class="ni">' + m.icon + (badge ? '<span class="ns">' + badge + '</span>' : '') + '</span><span class="nl">' + esc(m.title) + '</span></button>');
+    b.onclick = () => { V.sel = id; rMap(); const n = $('.sheet .btn'); if (n) n.focus(); };
+    map.appendChild(b);
+  });
+  if (V.sel && MIS[V.sel]) {
+    view.classList.add('has-sheet');
+    const id = V.sel, m = MIS[id], s = status(id);
+    const pos = S.pos[id] || 0;
+    const missing = (m.req || []).filter(r => !S.done[r]).map(r => MIS[r].icon + ' ' + MIS[r].title).join('، ');
+    const sh = el('<div class="sheet" role="region" aria-label="' + esc(m.title) + '"><div class="sheet-h"><span class="si">' + m.icon + '</span><div><h2>' + esc(m.title) + '</h2><p>' + esc(m.sub) + ' • ' + esc(m.lecture || '') + '</p></div><button class="iconbtn x" aria-label="إغلاق">✕</button></div>' +
+      (id !== 'final' ? masteryHTML(id) : '') +
+      (s === 'locked' ? '<p class="note">🔒 يفضل تخلص الأول: ' + esc(missing) + '. القفل هنا للترتيب بس؛ تقدر تدخل لو حابب.</p>' : '') +
+      '<div class="row"><button class="btn">' + (s === 'done' ? '↻ العب تاني' : pos > 0 ? '▶ كمّل' : s === 'locked' ? 'ادخل برضه' : '▶ ابدأ') + '</button>' +
+      '<button class="btn ghost small" data-deep>🔬 المرجع</button></div></div>');
+    $('.x', sh).onclick = () => { V.sel = null; rMap(); };
+    $('.btn', sh).onclick = () => { const i = s === 'done' ? 0 : Math.min(pos, scenesOf(id).length - 1); go({ name: 'mission', id, i }); };
+    $('[data-deep]', sh).onclick = () => overlay('🔬 ' + m.title, m.deep);
+    view.appendChild(sh);
+  }
+}
+
+/* ───────── mission player ───────── */
+let sceneReady = false;
+function rMission() {
+  const list = scenesOf(V.id);
+  V.i = Math.max(0, Math.min(V.i, list.length - 1));
+  S.pos[V.id] = V.i; save();
+  const st = shell('mission');
+  const view = el('<section class="view" id="sv"><div class="scene-wrap"><div class="scene anim-in" id="scene" role="region" aria-roledescription="مشهد"></div></div></section>');
+  st.appendChild(view);
+  const sc = list[V.i]; const key = V.id + ':' + V.i; const m = MIS[V.id];
+  sceneReady = false;
+  const bar = $('#scenebar');
+  bar.innerHTML = '<button class="btn ghost small" id="b-prev" ' + (V.i === 0 ? 'disabled' : '') + '>→ السابق</button>' +
+    (sc.why ? '<button class="btn ghost small" id="b-why">❓ ليه؟</button>' : '') +
+    (m.deep ? '<button class="btn ghost small" id="b-deep">🔬 تعمّق</button>' : '') +
+    '<span class="sp"></span><button class="btn" id="b-next" disabled>' + (V.i === list.length - 1 ? 'للخريطة' : 'التالي ←') + '</button>';
+  $('#b-prev').onclick = () => go({ name: 'mission', id: V.id, i: V.i - 1 });
+  $('#b-next').onclick = next;
+  if (sc.why) $('#b-why').onclick = () => overlay('❓ ليه؟', sc.why, true);
+  if (m.deep) $('#b-deep').onclick = () => overlay('🔬 ' + m.title, m.deep);
+  const box = $('#scene');
+  const R = { story: sStory, reveal: sReveal, mcq: sMCQ, calc: sCalc, order: sOrder, match: sMatch, sort: sSort, flip: sFlip, teach: sTeach, checkpoint: sCheckpoint, boss: sBoss, lab: sLab, complete: sComplete, finale: sFinale }[sc.t];
+  R(sc, box, key, m);
+  const h = $('h1, h2, .q', box); if (h) { h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true }); }
+}
+function ready(pulse) {
+  sceneReady = true;
+  const n = $('#b-next'); if (!n) return;
+  n.disabled = false; if (pulse !== false) n.classList.add('pulse');
+}
+function next() {
+  const list = scenesOf(V.id);
+  if (V.i >= list.length - 1) { go({ name: 'map', sel: currentMission() || V.id }); return; }
+  go({ name: 'mission', id: V.id, i: V.i + 1 });
+}
+function head(sc, m, kickerTxt, kcls) {
+  return '<div class="big-ico" aria-hidden="true">' + (sc.icon || m.icon) + '</div>' + (kickerTxt ? '<span class="kicker ' + (kcls || '') + '">' + kickerTxt + '</span>' : '');
+}
+
+function sStory(sc, box, key, m) {
+  box.innerHTML = head(sc, m, sc.kicker || (m.icon + ' ' + m.title)) + '<h1 class="sc-title">' + F(sc.title) + '</h1><div class="body">' + F(sc.body) + '</div>';
+  if (sc.btn) $('#b-next').textContent = sc.btn + ' ←';
+  ready();
+}
+function sReveal(sc, box, key, m) {
+  box.innerHTML = head(sc, m, '✨ ' + (sc.badge || 'معلومة مفتوحة')) + '<h1 class="sc-title">' + F(sc.title) + '</h1><div class="body">' + F(sc.body) + '</div>';
+  ready();
+}
+
+const TAGS = { predict: ['🔮 توقّع', 'predict'], concept: ['🧠 فكرة', ''], trap: ['⚠️ فخ كيميائي', 'trap'], recall: ['🔁 استرجاع', 'recall'] };
+function sMCQ(sc, box, key, m) {
+  const tg = TAGS[sc.tag] || TAGS.concept;
+  box.innerHTML = head(sc, m, tg[0], tg[1]) + '<h1 class="q">' + F(sc.q) + '</h1>' + (sc.fig ? fig(sc.fig) : '') + '<div class="mc"></div>';
+  const done = S.sc[key] && S.sc[key].d;
+  mountMCQ($('.mc', box), sc, { mode: 'learn', done, onDone(r) { finish(key, 'mcq', r); ready(); } });
+  if (done) ready(false);
+}
+function fig(name) {
+  if (name === 'ptgrid') {
+    const L = [['', '', '', '', '', '·', 'G'], ['', '', '', '', '', 'Z', '·'], ['A', 'B', 'C', 'D', 'E', '·', '·'], ['·', '·', 'M', 'Y', '·', '·', '·']];
+    return '<div class="ptgrid" aria-label="مقطع من الجدول الدوري: الصف الأول G في العمود السابع، الصف الثاني Z في العمود السادس، الصف الثالث A B C D E، الصف الرابع M تحت C و Y تحت D">' +
+      L.map(r => r.map(c => c === '' ? '<span class="e"></span>' : '<span>' + (c === '·' ? '' : c) + '</span>').join('')).join('') + '</div>';
+  }
+  return '';
+}
+
+/* generic MCQ: learn mode allows retries with "would be right if"; exam mode is single-shot */
+function mountMCQ(wrap, q, o) {
+  const order = q.o.map((t, i) => i);
+  wrap.innerHTML = '<div class="opts" role="group"></div><div class="fbw" aria-live="polite"></div>';
+  const opts = $('.opts', wrap), fbw = $('.fbw', wrap);
+  let wrong = 0, finished = false;
+  order.forEach((i, n) => {
+    const b = el('<button class="opt" data-k="' + (n + 1) + '"><span class="k">' + AR_KEYS[n] + '</span><span class="ot">' + F(q.o[i]) + '</span></button>');
+    b.onclick = () => pick(i, b);
+    opts.appendChild(b);
+  });
+  function okPanel(extraIf) {
+    return '<div class="fb ok anim-in"><div class="fb-h">' + (o.mode === 'exam' && extraIf != null ? '❌ إجابة غلط' : '✅ صح!') + '</div>' +
+      (extraIf ? '<div class="fb-row"><span>🔍 إجابتك</span><div>' + F(extraIf) + '</div></div>' : '') +
+      (q.idea ? '<div class="fb-row"><span>🧠 الفكرة</span><div>' + F(q.idea) + '</div></div>' : '') +
+      (q.trap ? '<div class="fb-row"><span>⚠️ الفخ</span><div>' + F(q.trap) + '</div></div>' : '') +
+      (q.clue ? '<div class="fb-row"><span>🎯 مفتاح الامتحان</span><div>' + F(q.clue) + '</div></div>' : '') +
+      (q.src ? '<div class="note">📘 ' + esc(q.src) + '</div>' : '') + '</div>';
+  }
+  function solve(r) {
+    finished = true;
+    $$('.opt', opts).forEach(b => b.disabled = true);
+    $$('.opt', opts)[q.a].classList.add('is-right');
+    if (o.onDone) o.onDone(r);
+  }
+  function pick(i, b) {
+    if (finished) return;
+    if (i === q.a) {
+      fbw.innerHTML = okPanel(); solve(wrong === 0 ? 1 : Math.max(.4, 1 - .3 * wrong)); announce('صح');
+      return;
+    }
+    wrong++;
+    b.classList.add('is-wrong', 'shake'); b.disabled = true;
+    const hint = (q.h && q.h[i]) || '';
+    if (o.mode === 'exam') {
+      fbw.innerHTML = okPanel(hint ? 'كانت هتبقى صح لو… ' + hint : 'الاختيار ده مش المطلوب.').replace('fb ok', 'fb bad');
+      solve(0); announce('إجابة غلط'); return;
+    }
+    fbw.innerHTML = '<div class="fb bad anim-in"><div class="fb-h">❌ مش بالظبط.</div>' +
+      (hint ? '<div class="fb-row"><span>🔍 كانت هتبقى صح لو</span><div>' + F(hint) + '</div></div>' : '<div class="fb-row"><span>🔍 فكّر تاني</span><div>الاختيار ده مش اللي السؤال بيسأل عنه.</div></div>') +
+      (q.clue ? '<div class="fb-row"><span>🎯 الدليل المهم</span><div>' + F(q.clue) + '</div></div>' : '') +
+      '<div class="row" style="justify-content:flex-start">حاول تاني 💪 ' + (wrong >= 2 ? '<button class="linkbtn" data-reveal>اكشف الإجابة</button>' : '') + '</div></div>';
+    const rv = $('[data-reveal]', fbw);
+    if (rv) rv.onclick = () => { fbw.innerHTML = okPanel(); solve(.2); };
+    announce('مش بالظبط، حاول تاني');
+  }
+  if (o.done) { fbw.innerHTML = okPanel(); finished = true; $$('.opt', opts).forEach(b => b.disabled = true); $$('.opt', opts)[q.a].classList.add('is-right'); }
+}
+
+function sCalc(sc, box, key, m) {
+  const done = S.sc[key] && S.sc[key].d;
+  box.innerHTML = head(sc, m, '🧮 مسألة') + '<h1 class="q">' + F(sc.q) + '</h1><div class="given">' + sc.given.map(g => '<span>' + F(g) + '</span>').join('') + '</div><div class="panel" id="cw"></div>';
+  const cw = $('#cw', box); let step = 0, slips = 0;
+  function runStep() {
+    if (step < sc.steps.length) {
+      const st = sc.steps[step];
+      const w = el('<div style="display:grid;gap:10px;justify-items:center"><div class="q" style="font-size:var(--t-m)">الخطوة ' + (step + 1) + ': ' + F(st.q) + '</div><div class="mcw" style="width:100%"></div></div>');
+      cw.appendChild(w);
+      mountMCQ($('.mcw', w), Object.assign({}, st), { mode: 'learn', onDone(r) { if (r < 1) slips++; step++; setTimeout(runStep, 250); } });
+    } else {
+      const w = el('<div style="display:grid;gap:10px;justify-items:center;margin-top:12px"><label for="calc-' + key.replace(':', '-') + '">النتيجة النهائية (' + esc(sc.unit) + ')</label><div class="row"><input class="num-in" inputmode="decimal" id="calc-' + key.replace(':', '-') + '" autocomplete="off"><button class="btn small">تحقق</button></div><div class="cfb" aria-live="polite"></div></div>');
+      cw.appendChild(w);
+      const inp = $('input', w), cfb = $('.cfb', w);
+      inp.focus();
+      const check = () => {
+        const v = Number(inp.value.replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[,\s]/g, ''));
+        if (Math.abs(v - sc.ans) < 0.001) {
+          cfb.innerHTML = '<div class="fb ok anim-in"><div class="fb-h">✅ ' + sc.ans + ' ' + esc(sc.unit) + '</div><div class="fb-row"><span>🧠 الفكرة</span><div>' + F(sc.idea) + '</div></div></div>';
+          inp.disabled = true; finish(key, 'calc', slips ? .7 : 1); ready();
+        } else { slips++; inp.classList.add('shake'); setTimeout(() => inp.classList.remove('shake'), 400); cfb.innerHTML = '<div class="fb bad"><div class="fb-h">❌ مش بالظبط.</div><div>راجع الخطوتين: حوّل الوحدة الأول، وبعدين اضرب في النسبة كعدد عشري.</div></div>'; }
+      };
+      $('button', w).onclick = check; inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); check(); } };
+    }
+  }
+  if (done) { cw.innerHTML = '<div class="fb ok"><div class="fb-h">✅ ' + sc.ans + ' ' + esc(sc.unit) + '</div><div>' + F(sc.idea) + '</div></div>'; ready(false); }
+  else runStep();
+}
+
+function sOrder(sc, box, key, m) {
+  const done = S.sc[key] && S.sc[key].d;
+  box.innerHTML = head(sc, m, '🧭 رتّب') + '<h1 class="q">' + F(sc.q) + '</h1><div class="order-slots"></div><div class="pool"></div><div class="ofb" aria-live="polite"></div>';
+  const slots = $('.order-slots', box), pool = $('.pool', box), ofb = $('.ofb', box);
+  sc.items.forEach((t, i) => slots.appendChild(el('<div class="slot"><span class="sn">' + (i + 1) + '</span><span class="sv"></span></div>')));
+  let nxt = 0, mistakes = 0;
+  const fill = i => { const s = slots.children[i]; s.classList.add('filled'); $('.sv', s).innerHTML = F(sc.items[i]); };
+  const end = () => { ofb.innerHTML = sc.idea ? '<div class="fb ok anim-in"><div class="fb-h">✅ الترتيب صح</div><div>' + F(sc.idea) + '</div></div>' : '<div class="fb ok"><div class="fb-h">✅ الترتيب صح</div></div>'; };
+  if (done) { sc.items.forEach((t, i) => fill(i)); end(); ready(false); return; }
+  let firstOrder = shuffle(sc.items.map((t, i) => i));
+  if (firstOrder.every((v, i) => v === i) && sc.items.length > 1) firstOrder = firstOrder.reverse();
+  firstOrder.forEach(i => {
+    const b = el('<button class="tok">' + F(sc.items[i]) + '</button>');
+    b.onclick = () => {
+      if (i === nxt) { fill(i); b.disabled = true; nxt++; ofb.innerHTML = ''; if (nxt === sc.items.length) { end(); finish(key, 'order', Math.max(.4, 1 - .15 * mistakes)); ready(); } }
+      else { mistakes++; b.classList.add('shake'); setTimeout(() => b.classList.remove('shake'), 400); ofb.innerHTML = '<div class="fb bad"><div>❌ مش دي اللي عليها الدور. اسأل نفسك: إيه اللي لازم يحصل <b>قبل</b> كده؟</div></div>'; }
+    };
+    pool.appendChild(b);
+  });
+}
+
+function sMatch(sc, box, key, m) {
+  const done = S.sc[key] && S.sc[key].d;
+  box.innerHTML = head(sc, m, '🔗 توصيل') + '<h1 class="q">' + F(sc.q) + '</h1><div class="match"><div class="col L"></div><div class="col R"></div></div><div class="mfb" aria-live="polite"></div>';
+  const L = $('.L', box), Rr = $('.R', box), mfb = $('.mfb', box);
+  let sel = null, matched = 0, mistakes = 0;
+  const lb = sc.pairs.map((p, i) => { const b = el('<button class="tok" aria-pressed="false">' + F(p[0]) + '</button>'); b.dataset.i = i; L.appendChild(b); return b; });
+  const rIdx = shuffle(sc.pairs.map((p, i) => i));
+  const rb = {};
+  rIdx.forEach(i => { const b = el('<button class="tok">' + F(sc.pairs[i][1]) + '</button>'); b.dataset.i = i; Rr.appendChild(b); rb[i] = b; });
+  const lock = i => { lb[i].classList.add('m' + (i % 5)); rb[i].classList.add('m' + (i % 5)); lb[i].disabled = rb[i].disabled = true; lb[i].classList.remove('sel'); };
+  const end = () => { mfb.innerHTML = '<div class="fb ok anim-in"><div class="fb-h">✅ كله متوصّل</div>' + (sc.idea ? '<div>' + F(sc.idea) + '</div>' : '') + '</div>'; };
+  if (done) { sc.pairs.forEach((p, i) => lock(i)); end(); ready(false); return; }
+  lb.forEach(b => b.onclick = () => { lb.forEach(x => { x.classList.remove('sel'); x.setAttribute('aria-pressed', 'false'); }); sel = +b.dataset.i; b.classList.add('sel'); b.setAttribute('aria-pressed', 'true'); });
+  Object.values(rb).forEach(b => b.onclick = () => {
+    if (sel == null) { mfb.innerHTML = '<div class="note">اختار من العمود الأول الأول.</div>'; return; }
+    const i = +b.dataset.i;
+    if (i === sel) { lock(i); matched++; sel = null; mfb.innerHTML = ''; if (matched === sc.pairs.length) { end(); finish(key, 'match', Math.max(.4, 1 - .12 * mistakes)); ready(); } }
+    else { mistakes++; b.classList.add('shake'); setTimeout(() => b.classList.remove('shake'), 400); mfb.innerHTML = '<div class="fb bad"><div>❌ مش الزوج ده. جرّب تاني.</div></div>'; }
+  });
+}
+
+function sSort(sc, box, key, m) {
+  const done = S.sc[key] && S.sc[key].d;
+  box.innerHTML = head(sc, m, '🗂️ تصنيف') + '<h1 class="q">' + F(sc.q) + '</h1><div class="pool"></div><div class="bins"></div><div class="sfb" aria-live="polite"></div>';
+  const pool = $('.pool', box), bins = $('.bins', box), sfb = $('.sfb', box);
+  const binEls = sc.bins.map((b, i) => { const d = el('<div class="bin"><button class="bh">' + F(b) + '</button><div class="in"></div></div>'); bins.appendChild(d); return d; });
+  let sel = null, placed = 0, mistakes = 0;
+  const put = (i) => { const it = sc.items[i]; $('.in', binEls[it[1]]).appendChild(el('<span>' + F(it[0]) + '</span>')); };
+  const end = () => { sfb.innerHTML = '<div class="fb ok anim-in"><div class="fb-h">✅ تصنيف ممتاز</div>' + (sc.idea ? '<div>' + F(sc.idea) + '</div>' : '') + '</div>'; };
+  if (done) { sc.items.forEach((it, i) => put(i)); end(); ready(false); return; }
+  const toks = shuffle(sc.items.map((t, i) => i)).map(i => { const b = el('<button class="tok" aria-pressed="false">' + F(sc.items[i][0]) + '</button>'); b.dataset.i = i; pool.appendChild(b); return b; });
+  toks.forEach(b => b.onclick = () => { toks.forEach(x => { x.classList.remove('sel'); x.setAttribute('aria-pressed', 'false'); }); sel = b; b.classList.add('sel'); b.setAttribute('aria-pressed', 'true'); binEls.forEach(x => x.classList.add('target')); });
+  binEls.forEach((d, bi) => $('.bh', d).onclick = () => {
+    if (!sel) { sfb.innerHTML = '<div class="note">اختار كارت الأول، وبعدين اضغط على المجموعة.</div>'; return; }
+    const i = +sel.dataset.i;
+    if (sc.items[i][1] === bi) { put(i); sel.remove(); sel = null; placed++; sfb.innerHTML = ''; binEls.forEach(x => x.classList.remove('target')); if (placed === sc.items.length) { end(); finish(key, 'sort', Math.max(.4, 1 - .12 * mistakes)); ready(); } }
+    else { mistakes++; d.classList.add('shake'); setTimeout(() => d.classList.remove('shake'), 400); sfb.innerHTML = '<div class="fb bad"><div>❌ مش هنا. فكّر في التعريف تاني.</div></div>'; }
+  });
+}
+
+function sFlip(sc, box, key, m) {
+  const done = S.sc[key] && S.sc[key].d;
+  box.innerHTML = head(sc, m, '🃏 اكتشف') + '<h1 class="q">' + F(sc.q) + '</h1><div class="flips"></div>';
+  const wrap = $('.flips', box); let opened = 0;
+  sc.cards.forEach(c => {
+    const b = el('<button class="flip ' + (c.tone || '') + '" aria-pressed="false">' + F(c.front) + '</button>');
+    b.onclick = () => { if (b.classList.contains('open')) return; b.classList.add('open', 'anim-in'); b.setAttribute('aria-pressed', 'true'); b.innerHTML = F(c.back); opened++; if (opened === sc.cards.length) { finish(key, 'flip', 1); ready(); } };
+    if (done) { b.classList.add('open'); b.innerHTML = F(c.back); }
+    wrap.appendChild(b);
+  });
+  if (done) ready(false);
+}
+
+function sTeach(sc, box, key, m) {
+  const done = S.sc[key] && S.sc[key].d;
+  const id = 'teach-' + key.replace(':', '-');
+  box.innerHTML = head(sc, m, '🎤 اشرحها بنفسك') + '<h1 class="q">' + F(sc.prompt) + '</h1><label class="sr" for="' + id + '">إجابتك</label><textarea class="teach" id="' + id + '" placeholder="اكتب بأسلوبك… مش لازم تبقى مثالية"></textarea><div class="row"><button class="btn ghost" id="t-rev">👀 اكشف الشرح النموذجي</button></div><div class="tm"></div>';
+  const ta = $('textarea', box);
+  ta.value = S.notes[key] || '';
+  ta.oninput = () => { S.notes[key] = ta.value; save(); };
+  const show = () => { $('.tm', box).innerHTML = '<div class="model anim-in"><b>📘 شرح نموذجي</b><br>' + F(sc.model) + '<div class="note" style="margin-top:6px">قارن: إيه اللي كتبته؟ إيه اللي نسيته؟</div></div>'; $('#t-rev').remove(); };
+  $('#t-rev').onclick = () => { const wrote = ta.value.trim().length >= 15; show(); if (finish(key, 'teach', wrote ? 1 : .5, wrote ? XP.teach : 0) && !wrote) toast('اكتب محاولتك المرة الجاية عشان تاخد XP'); ready(); };
+  if (done) { show(); ready(false); }
+}
+
+function sCheckpoint(sc, box, key, m) {
+  box.innerHTML = '<div class="big-ico">☕</div><span class="kicker recall">نقطة استراحة</span><h1 class="sc-title">اتعلمت كتير</h1><p class="body">قبل ما تكمّل: إيه أهم <b>3 حاجات</b> فاكرهم دلوقتي؟ (من غير ما ترجع تبص)</p><div class="cp-inputs"></div><p class="muted">خد نفس… اشرب مية… وكمّل لما تكون جاهز.</p>';
+  const w = $('.cp-inputs', box);
+  const vals = (S.notes[key] || '||').split('|');
+  [0, 1, 2].forEach(i => {
+    const inp = el('<input type="text" id="cp-' + key.replace(':', '-') + '-' + i + '" aria-label="الحاجة رقم ' + (i + 1) + '" placeholder="' + (i + 1) + '.">');
+    inp.value = vals[i] || '';
+    inp.oninput = () => { const a = $$('input', w).map(x => x.value.replace(/\|/g, '/')); S.notes[key] = a.join('|'); save(); if (a.filter(x => x.trim().length > 3).length >= 2) finish(key, 'checkpoint', 1); };
+    w.appendChild(inp);
+  });
+  ready(false);
+}
+
+function sBoss(sc, box, key, m) {
+  const done = S.sc[key] && S.sc[key].d;
+  let qi = 0, total = 0, hits = 0;
+  function frame() {
+    box.innerHTML = '<div class="boss-h"><span class="kicker trap">⚔️ ' + (sc.final ? 'الزعيم النهائي' : 'معركة زعيم') + '</span><div class="boss-ico" aria-hidden="true">' + sc.icon + '</div><h1 class="sc-title">' + F(sc.name) + '</h1><div class="hp" aria-label="طاقة الزعيم">' + sc.qs.map((q, i) => '<i class="' + (i < qi ? 'gone' : '') + '"></i>').join('') + '</div></div><div class="bw" style="width:100%;display:grid;justify-items:center;gap:12px"></div>';
+  }
+  function intro() {
+    frame();
+    $('.bw', box).innerHTML = '<p class="body">' + F(sc.intro) + '</p><p class="muted">' + sc.qs.length + ' ضربات. الغلط مش بيخسرك؛ بيعلمك.</p><button class="btn pulse" id="bs">⚔️ ابدأ المعركة</button>';
+    $('#bs').onclick = () => { qi = 0; ask(); }; $('#bs').focus();
+  }
+  function ask() {
+    frame();
+    const q = sc.qs[qi]; const bw = $('.bw', box);
+    bw.innerHTML = (q.label ? '<span class="step-chip">' + esc(q.label) + '</span>' : '<span class="step-chip">الضربة ' + (qi + 1) + ' من ' + sc.qs.length + '</span>') + '<h2 class="q">' + F(q.q) + '</h2><div class="mcw" style="width:100%;display:grid;justify-items:center"></div>';
+    $('.q', bw).setAttribute('tabindex', '-1'); $('.q', bw).focus({ preventScroll: true });
+    mountMCQ($('.mcw', bw), q, { mode: 'learn', onDone(r) {
+      total++; hits += r;
+      const ico = $('.boss-ico', box); ico.classList.add('hit');
+      const hp = $$('.hp i', box)[qi]; if (hp) hp.classList.add('gone');
+      qi++;
+      const nb = el('<button class="btn" style="margin-top:6px">' + (qi < sc.qs.length ? '💥 الضربة الجاية ←' : '🏁 اقضي عليه') + '</button>');
+      nb.onclick = () => qi < sc.qs.length ? ask() : win(true);
+      bw.appendChild(nb); nb.focus({ preventScroll: true });
+    } });
+  }
+  function win(fresh) {
+    frame();
+    $$('.hp i', box).forEach(i => i.classList.add('gone'));
+    $('.boss-ico', box).textContent = '💥';
+    $('.bw', box).innerHTML = '<h2 class="sc-title" style="color:var(--gold)">🏆 انتصار!</h2><p class="body">هزمت <b>' + F(sc.name) + '</b>.' + (fresh ? ' دقة الضربات: ' + Math.round(100 * hits / Math.max(1, total)) + '%' : '') + '</p><button class="btn ghost small" id="br">↻ قاتله تاني</button>';
+    $('#br').onclick = () => { qi = 0; hits = 0; total = 0; ask(); };
+    if (fresh) finish(key, 'boss', hits / Math.max(1, total));
+    ready();
+  }
+  if (done) win(false); else intro();
+}
+
+function sComplete(sc, box, key, m) {
+  S.done[m.id] = true; save();
+  const nx = currentMission();
+  box.innerHTML = '<div class="big-ico">🎬</div><span class="kicker recall">MISSION COMPLETE</span><h1 class="sc-title">' + m.icon + ' ' + esc(m.title) + '</h1><p class="body">دلوقتي إنت فاهم:</p><div class="chips">' + m.concepts.map(c => '<span class="chip">' + F(c) + '</span>').join('') + '</div><div class="panel">' + masteryHTML(m.id) + '</div>' +
+    (nx ? '<p class="body">الجاي: <b>' + MIS[nx].icon + ' ' + esc(MIS[nx].title) + '</b></p><div class="row"><button class="btn pulse" id="c-next">ادخل المهمة الجاية ←</button><button class="btn ghost small" id="c-exam">🎯 امتحن نفسك في المهمة دي</button></div>' : '<div class="row"><button class="btn ghost small" id="c-exam">🎯 امتحن نفسك في المهمة دي</button></div>');
+  if (nx) $('#c-next').onclick = () => go({ name: 'mission', id: nx, i: S.pos[nx] || 0 });
+  $('#c-exam').onclick = () => { EX = null; go({ name: 'exam', filter: m.id }); };
+  ready(false);
+}
+function sFinale(sc, box, key, m) {
+  S.done.final = true; save();
+  box.innerHTML = '<div class="big-ico">🏆</div><span class="kicker">سيد الحديد</span><h1 class="sc-title">خلّصت مملكة الحديد</h1><p class="body">من النيزك… للخام… للفرن… للسبيكة… للتفاعل… للأكسيد.<br>كل حاجة متوصلة ببعض. شوفها كلها مرة واحدة:</p><div class="row"><button class="btn pulse" id="f-model">🌌 الصورة الكاملة</button><button class="btn ghost small" id="f-exam">🎯 ساحة الامتحان</button></div>';
+  $('#f-model').onclick = () => go({ name: 'model' });
+  $('#f-exam').onclick = () => go({ name: 'exam' });
+  ready(false);
+}
+
+/* ───────── labs ───────── */
+function sLab(sc, box, key, m) {
+  ({ prep: labPrep, roast: labRoast, staircase: labStair, bench: labBench, nonmetal: labNonmetal, lattice: labLattice })[sc.lab](sc, box, key, m);
+}
+function labHead(sc, m, kick) { return head(sc, m, '🧪 ' + (kick || 'معمل افتراضي')) + '<h1 class="sc-title">' + F(sc.title) + '</h1>'; }
+
+function labPrep(sc, box, key, m) {
+  const done = S.sc[key] && S.sc[key].d;
+  const ST = ['التكسير', 'التلبيد', 'التركيز', 'التحميص'];
+  const ROWS = [
+    ['نوع التغير', ['فيزيائي', 'فيزيائي', 'فيزيائي', 'كيميائي'], ['فيزيائي', 'كيميائي']],
+    ['كتلة الخام', ['ثابتة', 'ثابتة', 'تقل', 'تقل'], ['تزداد', 'تقل', 'ثابتة']],
+    ['حجم الحبيبات', ['يقل', 'يزداد', null, null], ['يزداد', 'يقل', 'ثابت']],
+    ['كتلة الحديد', ['ثابتة', 'ثابتة', 'ثابتة', 'ثابتة'], ['تزداد', 'تقل', 'ثابتة']],
+    ['نسبة الحديد', ['ثابتة', 'ثابتة', 'تزداد', 'تزداد'], ['تزداد', 'تقل', 'ثابتة']],
+    ['كتلة الشوائب', ['ثابتة', 'ثابتة', 'تقل', 'تقل'], ['تزداد', 'تقل', 'ثابتة']]
+  ];
+  box.innerHTML = labHead(sc, m, 'خط التجهيز') + '<p class="body">اضغط على كل خانة عشان تغيّر توقعك، وبعدين <b>تحقق</b>.</p><div class="prep-grid"><table><thead><tr><th></th>' + ST.map(s => '<th>' + s + '</th>').join('') + '</tr></thead><tbody></tbody></table></div><div class="row"><button class="btn" id="pc">تحقق ✓</button></div><div class="pfb" aria-live="polite"></div>';
+  const tb = $('tbody', box); const cells = [];
+  ROWS.forEach((row, ri) => {
+    const tr = el('<tr><th scope="row">' + row[0] + '</th></tr>');
+    row[1].forEach((ans, si) => {
+      const td = document.createElement('td');
+      if (ans == null) { td.innerHTML = '<span class="cell na" style="display:grid;place-items:center">—</span>'; }
+      else {
+        const b = el('<button class="cell unset" aria-label="' + row[0] + ' في ' + ST[si] + '">؟</button>');
+        b.dataset.k = -1;
+        b.onclick = () => { const k = (+b.dataset.k + 1) % row[2].length; b.dataset.k = k; b.textContent = row[2][k]; b.classList.remove('unset', 'ok', 'no'); };
+        cells.push({ b, ans, opts: row[2] });
+        td.appendChild(b);
+      }
+      tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  });
+  let tries = 0;
+  const solveAll = () => { cells.forEach(c => { c.b.textContent = c.ans; c.b.className = 'cell ok'; c.b.disabled = true; }); $('#pc').remove(); $('.pfb', box).innerHTML = '<div class="fb ok anim-in"><div class="fb-h">✅ خط التجهيز مضبوط</div><div>' + F(sc.idea) + '</div></div>'; };
+  $('#pc').onclick = () => {
+    tries++;
+    let wrong = 0;
+    cells.forEach(c => { const v = c.b.dataset.k < 0 ? null : c.opts[c.b.dataset.k]; c.b.classList.remove('ok', 'no'); if (v === c.ans) c.b.classList.add('ok'); else { c.b.classList.add('no'); wrong++; } });
+    if (!wrong) { solveAll(); finish(key, 'lab', tries === 1 ? 1 : Math.max(.5, 1 - .15 * (tries - 1))); ready(); }
+    else $('.pfb', box).innerHTML = '<div class="fb bad"><div class="fb-h">❌ ' + wrong + ' خانات محتاجة مراجعة</div><div>🎯 الدليل: التكسير والتلبيد بيغيروا <b>الحجم</b> بس. التركيز والتحميص بيشيلوا <b>شوائب</b>، فالنسبة تتغير.</div>' + (tries >= 2 ? '<button class="linkbtn" id="pshow">اكشف الجدول</button>' : '') + '</div>';
+    const ps = $('#pshow', box); if (ps) ps.onclick = () => { solveAll(); finish(key, 'lab', .3); ready(); };
+  };
+  if (done) { solveAll(); ready(false); }
+}
+
+function chartSVG(pts, opt) {
+  const W = 120, H = 80, x0 = 14, y0 = 70, w = 100, h = 60;
+  const P = pts.map(p => [x0 + p[0] * w, y0 - p[1] * h]);
+  const d = 'M' + P.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L');
+  let lbl = '';
+  pts.forEach((p, i) => { if (p[2]) lbl += '<text x="' + Math.min(P[i][0], 100) + '" y="' + (P[i][1] - 4) + '" text-anchor="middle">' + p[2] + '</text>'; });
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(opt.t) + '"><path class="ax" d="M' + x0 + ' 8 V' + y0 + ' H116"/><path class="' + (opt.anim ? 'drawn' : '') + '" d="' + d + '"/>' + lbl + '<text x="116" y="78" text-anchor="end">الزمن</text></svg>';
+}
+function labRoast(sc, box, key, m) {
+  const done = S.sc[key] && S.sc[key].d;
+  const ORES = {
+    siderite: { n: 'السيدريت', f: '$FeCO3$', ans: ['تقل', 'تزداد', 'تزداد'],
+      eq: '$2FeCO3 -[Δ]-> 2FeO + 2CO2$ (انحلال حراري) ثم $2FeO + ½O2 -[Δ]-> Fe2O3$ (أكسدة)',
+      note: 'الكتلة تقل لـ $FeO$ ثم تزيد شوية لـ $Fe2O3$؛ ونسبة الحديد تعلى عند $FeO$ ثم تنزل شوية — بس في الآخر الكتلة أقل والنسبة أعلى من البداية. عدد التأكسد +2 ← +3.',
+      g: [[[0, .85, 'FeCO₃'], [.5, .22, 'FeO'], [1, .55, 'Fe₂O₃']], [[0, .2, 'FeCO₃'], [.5, .85, 'FeO'], [1, .6, 'Fe₂O₃']], [[0, .35, '+2'], [.45, .35], [.6, .75, '+3'], [1, .75]]] },
+    limonite: { n: 'الليمونيت', f: '$2Fe2O3·3H2O$', ans: ['تقل', 'تزداد', 'ثابت'],
+      eq: '$2Fe2O3·3H2O -[Δ]-> 2Fe2O3 + 3H2O(v)$',
+      note: 'بيفقد ماء التبلر: الكتلة تقل ونسبة الحديد تزيد، واللون من الأصفر للأحمر، وعدد التأكسد ثابت (+3).',
+      g: [[[0, .8], [.45, .4], [1, .4]], [[0, .35], [.45, .75], [1, .75]], [[0, .6, '+3'], [1, .6]]] },
+    magnetite: { n: 'المجنتيت', f: '$Fe3O4$', ans: ['تزداد', 'تقل', 'تزداد'],
+      eq: '$2Fe3O4 + ½O2 -[Δ]-> 3Fe2O3$',
+      note: 'الاستثناء! بيكسب أكسجين: الكتلة تزيد، ونسبة الحديد تقل (72.4% ← 70%)، واللون من الأسود للأحمر، وعدد التأكسد يزيد.',
+      g: [[[0, .4], [.5, .72], [1, .72]], [[0, .72, '72.4%'], [.5, .45, '70%'], [1, .45]], [[0, .4], [.5, .72, '+3'], [1, .72]]] }
+  };
+  const Q = ['كتلة المادة الصلبة', 'نسبة الحديد', 'عدد تأكسد الحديد'];
+  const CH = ['تقل', 'ثابت', 'تزداد'];
+  const norm = v => v === 'ثابت' ? 'ثابت' : v;
+  const tried = {}; let correct = 0, asked = 0; let cur = 'siderite';
+  box.innerHTML = labHead(sc, m, 'فرن التحميص') + '<div class="tabs" role="tablist"></div><div class="rw" style="width:100%;display:grid;justify-items:center;gap:12px"></div>';
+  const tabs = $('.tabs', box), rw = $('.rw', box);
+  function drawTabs() {
+    tabs.innerHTML = '';
+    Object.keys(ORES).forEach(k => { const b = el('<button class="tok" role="tab" aria-selected="' + (k === cur) + '">' + (tried[k] || done ? '✓ ' : '') + ORES[k].n + '</button>'); b.onclick = () => { cur = k; drawTabs(); drawOre(); }; tabs.appendChild(b); });
+  }
+  function drawOre() {
+    const o = ORES[cur]; const pick = [null, null, null];
+    rw.innerHTML = '<p class="body">هنحمّص ' + o.n + ' ' + F(o.f) + ' في الهواء. 🔮 توقّع الأول:</p><div class="pred-rows">' + Q.map((q, i) => '<div class="pred-row"><span>' + q + '</span><span class="seg" role="group" aria-label="' + q + '">' + CH.map(c => '<button aria-pressed="false" data-r="' + i + '" data-v="' + c + '">' + (c === 'ثابت' ? '= ثابت' : c === 'تقل' ? '↓ تقل' : '↑ تزداد') + '</button>').join('') + '</span></div>').join('') + '</div><button class="btn" id="heat" disabled>🔥 سخّن</button><div class="out" style="width:100%;display:grid;justify-items:center;gap:10px"></div>';
+    $$('.seg button', rw).forEach(b => b.onclick = () => { const r = +b.dataset.r; pick[r] = b.dataset.v; $$('.seg button[data-r="' + r + '"]', rw).forEach(x => x.setAttribute('aria-pressed', String(x === b))); $('#heat', rw).disabled = pick.some(p => p == null); });
+    $('#heat', rw).onclick = () => {
+      $('#heat', rw).disabled = true; $$('.seg button', rw).forEach(x => x.disabled = true);
+      let ok = 0; const res = Q.map((q, i) => { const good = norm(pick[i]) === o.ans[i]; if (good) ok++; return '<div>' + (good ? '✅' : '❌') + ' ' + q + ': <b>' + o.ans[i] + '</b>' + (good ? '' : ' (توقعت: ' + pick[i] + ')') + '</div>'; }).join('');
+      if (!tried[cur]) { asked += 3; correct += ok; }
+      tried[cur] = true; drawTabs();
+      const anim = !reduced();
+      $('.out', rw).innerHTML = '<div class="charts">' + Q.map((q, i) => '<div class="chart"><div class="ct">' + q + '</div>' + chartSVG(o.g[i], { t: q, anim }) + '</div>').join('') + '</div><div class="note">رسومات نوعية (شكل المنحنى بس) زي رسومات كتابك.</div><div class="result anim-in">' + res + '<div>' + F(o.eq) + '</div><div>💡 ' + F(o.note) + '</div></div>';
+      if (Object.keys(tried).length === 3) { finish(key, 'lab', asked ? correct / asked : 1); ready(); $('.out', rw).appendChild(el('<div class="fb ok"><div class="fb-h">✅ جرّبت الخامات التلاتة</div><div>كل الخامات بعد التحميص بتبقى هيماتيت — الأسهل في الاختزال.</div></div>')); }
+      else $('.out', rw).appendChild(el('<div class="note">جرّب خام تاني من فوق 👆 (' + Object.keys(tried).length + ' من 3)</div>'));
+    };
+  }
+  drawTabs(); drawOre();
+  if (done) ready(false);
+}
+
+function labStair(sc, box, key, m) {
+  const done = S.sc[key] && S.sc[key].d;
+  const SP = { Fe: [50, 168], FeO: [130, 128], Fe3O4: [210, 88], Fe2O3: [290, 48] };
+  const NM = { Fe: 'Fe', FeO: 'FeO', Fe3O4: 'Fe₃O₄', Fe2O3: 'Fe₂O₃' };
+  const TASKS = [['Fe2O3', 'Fe3O4'], ['Fe2O3', 'FeO'], ['Fe3O4', 'Fe'], ['FeO', 'Fe2O3']];
+  const RX = {
+    'Fe2O3|r1': ['Fe3O4', '$3Fe2O3 + CO -[230-300°C]-> 2Fe3O4 + CO2$'],
+    'Fe2O3|r2': ['FeO', '$Fe2O3 + CO -[400-700°C]-> 2FeO + CO2$'],
+    'Fe2O3|r3': ['Fe', '$Fe2O3 + 3CO -[Over 700°C]-> 2Fe + 3CO2$'],
+    'Fe3O4|r2': ['FeO', '$Fe3O4 + H2 -[400-700°C]-> 3FeO + H2O$'],
+    'Fe3O4|r3': ['Fe', 'من المخطط: $Fe3O4$ فوق 700°C يعطي $Fe$'],
+    'FeO|r3': ['Fe', 'من المخطط: $FeO$ فوق 700°C يعطي $Fe$'],
+    'FeO|ox': ['Fe2O3', '$4FeO + O2 -[Δ]-> 2Fe2O3$'],
+    'Fe3O4|ox': ['Fe2O3', '$2Fe3O4 + ½O2 -[Δ]-> 3Fe2O3$'],
+    'Fe|ox': ['Fe3O4', '$3Fe + 2O2 -[Δ/S.T]-> Fe3O4$ (التسخين الطويل في الهواء يعطي $Fe2O3$)'],
+    'Fe2O3|ox': [null, '$Fe2O3$ <b>لا يتأكسد</b> عند تسخينه في الهواء لصعوبة كسر نظام إلكتروني مستقر.']
+  };
+  let ti = 0, at = TASKS[0][0], firstTry = true, solved = 0, score = 0;
+  const solvedSet = new Set();
+  box.innerHTML = labHead(sc, m, 'سلم الأكسدة والاختزال') + '<div class="tasks"></div><div class="stair panel"></div><div class="body" id="sq"></div><div class="act-row"></div><div class="sres" aria-live="polite" style="width:100%;display:grid;justify-items:center"></div>';
+  const svgBox = $('.stair', box);
+  svgBox.innerHTML = '<svg viewBox="0 0 340 200" role="img" aria-label="سلم: الحديد في الأسفل، ثم أكسيد الحديد الثاني، ثم المغناطيسي، ثم أكسيد الحديد الثالث في الأعلى">' +
+    '<path class="st-line" d="M20 180 H90 V140 H170 V100 H250 V60 H330"/>' +
+    Object.keys(SP).map(k => '<text class="lbl" x="' + SP[k][0] + '" y="' + (SP[k][1] + 26) + '" text-anchor="middle">' + NM[k] + '</text>').join('') +
+    '<text class="ox" x="50" y="196" text-anchor="middle">0</text><text class="ox" x="130" y="168" text-anchor="middle">+2</text><text class="ox" x="210" y="128" text-anchor="middle">+2, +3</text><text class="ox" x="290" y="88" text-anchor="middle">+3</text>' +
+    '<text class="ox" x="20" y="22">↑ O₂ (oxidation)</text><text class="ox" x="20" y="36">↓ CO / H₂ (reduction)</text>' +
+    '<g class="tokg"><circle class="tokc" r="9" cx="0" cy="0"/></g></svg>';
+  const tok = $('.tokg', svgBox);
+  const place = k => { tok.setAttribute('transform', 'translate(' + SP[k][0] + ' ' + (SP[k][1] - 4) + ')'); tok.style.transform = 'translate(' + SP[k][0] + 'px,' + (SP[k][1] - 4) + 'px)'; };
+  function drawTasks() {
+    const t = $('.tasks', box); t.innerHTML = '';
+    TASKS.forEach((tk, i) => { const b = el('<button class="tok ' + (solvedSet.has(i) ? 'done' : '') + '" aria-pressed="' + (i === ti) + '">' + (solvedSet.has(i) ? '✓ ' : '') + '<bdi dir="ltr">' + NM[tk[0]] + ' → ' + NM[tk[1]] + '</bdi></button>'); if (i === ti) b.classList.add('sel'); b.onclick = () => { ti = i; at = TASKS[i][0]; firstTry = true; place(at); drawTasks(); drawQ(); $('.sres', box).innerHTML = ''; }; t.appendChild(b); });
+  }
+  function drawQ() { $('#sq', box).innerHTML = '🎯 المهمة: حوّل <b>' + NM[TASKS[ti][0]] + '</b> إلى <b>' + NM[TASKS[ti][1]] + '</b> في خطوة واحدة.'; }
+  const acts = $('.act-row', box);
+  [['r1', '⬇ اختزال 230–300°C'], ['r2', '⬇ اختزال 400–700°C'], ['r3', '⬇ اختزال فوق 700°C'], ['ox', '⬆ أكسدة في الهواء']].forEach(([a, t]) => {
+    const b = el('<button class="tok">' + t + '</button>');
+    b.onclick = () => {
+      const from = TASKS[ti][0]; const r = RX[from + '|' + a]; const out = $('.sres', box);
+      place(from);
+      if (!r) { firstTry = false; out.innerHTML = '<div class="fb bad anim-in"><div>مخطط كتابك مش بيذكر تحول لـ ' + NM[from] + ' بالطريقة دي. جرّب اختيار تاني.</div></div>'; return; }
+      if (!r[0]) { firstTry = false; out.innerHTML = '<div class="fb bad anim-in"><div>' + F(r[1]) + '</div></div>'; return; }
+      setTimeout(() => place(r[0]), 40);
+      if (r[0] === TASKS[ti][1]) {
+        out.innerHTML = '<div class="fb ok anim-in"><div class="fb-h">✅ وصلت!</div><div>' + F(r[1]) + '</div></div>';
+        if (!solvedSet.has(ti)) { solvedSet.add(ti); score += firstTry ? 1 : .5; }
+        drawTasks();
+        if (solvedSet.size === TASKS.length) { finish(key, 'lab', score / TASKS.length); ready(); out.appendChild(el('<div class="note" style="margin-top:6px">🎉 خلصت المهام الأربعة. القاعدة: أي أكسيد فوق 700°C ← حديد.</div>')); }
+        else { const nx = TASKS.findIndex((t, j) => !solvedSet.has(j)); const nb = el('<button class="btn small" style="margin-top:8px">المهمة الجاية ←</button>'); nb.onclick = () => { ti = nx; at = TASKS[nx][0]; firstTry = true; place(at); drawTasks(); drawQ(); out.innerHTML = ''; }; out.appendChild(nb); }
+      } else { firstTry = false; out.innerHTML = '<div class="fb bad anim-in"><div class="fb-h">طلع ' + NM[r[0]] + ' مش ' + NM[TASKS[ti][1]] + '</div><div>' + F(r[1]) + '</div><button class="linkbtn" data-reset>رجّع وجرب تاني</button></div>'; $('[data-reset]', out).onclick = () => place(from); }
+    };
+    acts.appendChild(b);
+  });
+  place(at); drawTasks(); drawQ();
+  if (done) { ready(false); }
+}
+
+function labBench(sc, box, key, m) {
+  const done = S.sc[key] && S.sc[key].d;
+  const SUB = [['Fe', 'حديد'], ['FeO', '$FeO$'], ['Fe2O3', '$Fe2O3$'], ['Fe3O4', '$Fe3O4$'], ['Cu', 'نحاس']];
+  const REA = [['dS', '$H2SO4$ مخفف'], ['dH', '$HCl$ مخفف'], ['cS', '$H2SO4$ مركز ساخن'], ['cH', '$HCl$ مركز'], ['cN', '$HNO3$ مركز']];
+  const Y = 'y', N = 'n', P = 'p';
+  const DB = {
+    'Fe|dS': [Y, '$Fe + H2SO4 -[dil]-> FeSO4 + H2$', 'فقاعات هيدروجين، وتتكون أملاح حديد II.'],
+    'Fe|dH': [Y, '$Fe + 2HCl -[dil]-> FeCl2 + H2$', 'أملاح حديد II لأن الهيدروجين الناتج يختزل أملاح الحديد III.'],
+    'Fe|cS': [Y, '$3Fe + 8H2SO4 -[conc-Δ]-> FeSO4 + Fe2(SO4)3 + 8H2O + 4SO2$', 'يتصاعد $SO2$: رائحة نفاذة، يخضّر ورقة مبللة بثاني كرومات البوتاسيوم المحمضة.'],
+    'Fe|cH': [Y, 'كلوريد حديد II + هيدروجين', 'من كتابك: يتفاعل الحديد مع حمض الهيدروكلوريك المركز مكوناً كلوريد حديد II وهيدروجين.'],
+    'Fe|cN': [P, 'خمول ظاهري', 'يتفاعل في البداية ثم يتوقف: طبقة أكسيد غير مسامية.'],
+    'FeO|dS': [Y, '$FeO + H2SO4 -[Δ/dil]-> FeSO4 + H2O$', 'أملاح حديد II وماء (بدون هيدروجين).'],
+    'FeO|dH': [Y, '$FeO + 2HCl -[Δ/dil]-> FeCl2 + H2O$', 'أملاح حديد II وماء.'],
+    'FeO|cS': [Y, 'يتفاعل', 'جدول كتابك: $FeO$ يتفاعل مع الأحماض المركزة.'],
+    'FeO|cH': [Y, 'يتفاعل', 'جدول كتابك: $FeO$ يتفاعل مع الأحماض المركزة.'],
+    'Fe2O3|dS': [N, 'لا يحدث تفاعل', '$Fe2O3$ لا يتفاعل مع الأحماض المخففة.'],
+    'Fe2O3|dH': [N, 'لا يحدث تفاعل', '$Fe2O3$ لا يتفاعل مع الأحماض المخففة.'],
+    'Fe2O3|cS': [Y, '$Fe2O3 + 3H2SO4 -[Δ/conc]-> Fe2(SO4)3 + 3H2O$', 'أملاح حديد III وماء.'],
+    'Fe2O3|cH': [Y, '$Fe2O3 + 6HCl -[Δ/conc]-> 2FeCl3 + 3H2O$', 'أملاح حديد III وماء.'],
+    'Fe3O4|dS': [N, 'لا يحدث تفاعل', '$Fe3O4$ لا يتفاعل مع الأحماض المخففة.'],
+    'Fe3O4|dH': [N, 'لا يحدث تفاعل', '$Fe3O4$ لا يتفاعل مع الأحماض المخففة.'],
+    'Fe3O4|cS': [Y, '$Fe3O4 + 4H2SO4 -[conc-Δ]-> FeSO4 + Fe2(SO4)3 + 4H2O$', 'خليط أملاح II و III لأنه أكسيد مختلط.'],
+    'Fe3O4|cH': [Y, '$Fe3O4 + 8HCl -[conc-Δ]-> FeCl2 + 2FeCl3 + 4H2O$', 'خليط أملاح II و III لأنه أكسيد مختلط.'],
+    'Cu|dS': [N, 'لا يحدث تفاعل', 'النحاس لا يتفاعل مع حمض الكبريتيك المخفف.'],
+    'Cu|cN': [Y, 'يحدث تفاعل', 'النحاس يتفاعل مع حمض النيتريك المركز (جدول التمييز في كتابك).']
+  };
+  const GOAL = 8;
+  const log = {}; let s = null, r = null, hits = 0, tries = 0;
+  box.innerHTML = labHead(sc, m, 'منضدة الأحماض') + '<p class="body">اختار <b>مادة</b> و<b>حمض</b>، توقّع، وبعدين شوف. اكتشف ' + GOAL + ' تفاعلات على الأقل.</p><div class="tabs" id="bs-s" aria-label="المادة"></div><div class="tabs" id="bs-r" aria-label="الحمض"></div><div class="bq" style="width:100%;display:grid;justify-items:center;gap:10px"></div><div class="bench-log"></div>';
+  const drawSel = () => {
+    const a = $('#bs-s', box), b = $('#bs-r', box); a.innerHTML = ''; b.innerHTML = '';
+    SUB.forEach(([k, t]) => { const x = el('<button class="tok" aria-selected="' + (s === k) + '">' + F(t) + '</button>'); x.onclick = () => { s = k; drawSel(); drawQ(); }; a.appendChild(x); });
+    REA.forEach(([k, t]) => { const x = el('<button class="tok" aria-selected="' + (r === k) + '">' + F(t) + '</button>'); x.onclick = () => { r = k; drawSel(); drawQ(); }; b.appendChild(x); });
+  };
+  const drawLog = () => {
+    $('.bench-log', box).innerHTML = '<table><thead><tr><th></th>' + REA.map(x => '<th>' + F(x[1]) + '</th>').join('') + '</tr></thead><tbody>' + SUB.map(([k, t]) => '<tr><th>' + F(t) + '</th>' + REA.map(([rk]) => { const id = k + '|' + rk; if (!DB[id]) return '<td class="x" title="خارج المنهج">·</td>'; if (!log[id]) return '<td>?</td>'; return '<td class="' + (DB[id][0] === N ? 'n' : 'y') + '">' + (DB[id][0] === Y ? '✓' : DB[id][0] === P ? '⏸' : '✗') + '</td>'; }).join('') + '</tr>').join('') + '</tbody></table><div class="note" style="text-align:center">اكتشفت ' + Object.keys(log).length + ' من ' + GOAL + ' • ✓ يتفاعل • ✗ لا يتفاعل • ⏸ يتفاعل ثم يتوقف • · مش في منهجك</div>';
+  };
+  const drawQ = () => {
+    const q = $('.bq', box);
+    if (!s || !r) { q.innerHTML = ''; return; }
+    const id = s + '|' + r; const d = DB[id];
+    if (!d) { q.innerHTML = '<div class="result">🚫 التركيبة دي مش موجودة في منهجك — جرّب تركيبة تانية.</div>'; return; }
+    q.innerHTML = '<div class="row seg" role="group" aria-label="توقعك"><button data-p="y">✓ يتفاعل</button><button data-p="n">✗ لا يتفاعل</button><button data-p="p">⏸ يتفاعل ثم يتوقف</button></div>';
+    $$('button', q).forEach(b => b.onclick = () => {
+      const good = b.dataset.p === d[0];
+      if (!log[id]) { tries++; if (good) hits++; }
+      log[id] = 1;
+      q.innerHTML = '<div class="result anim-in"><div><b>' + (good ? '✅ توقعك صح' : '❌ توقعك مش صح') + '</b> — ' + (d[0] === Y ? 'يحدث تفاعل <span class="bubbles">💨</span>' : d[0] === P ? 'يتفاعل ثم يتوقف 🛡️' : 'لا يحدث تفاعل') + '</div><div>' + F(d[1]) + '</div><div>💡 ' + F(d[2]) + '</div></div>';
+      drawLog();
+      if (Object.keys(log).length >= GOAL && !(S.sc[key] && S.sc[key].d)) { finish(key, 'lab', tries ? hits / tries : 1); ready(); toast('🧪 المنضدة مكتملة — تقدر تكمل اكتشاف أو تمشي'); }
+    });
+  };
+  drawSel(); drawLog();
+  if (done) ready(false);
+}
+
+function labNonmetal(sc, box, key, m) {
+  const done = S.sc[key] && S.sc[key].d;
+  const R = [['$Cl2$', '$FeCl2$', '$FeCl3$', 1, 'الكلور عامل مؤكسد قوي'], ['$Br2$', '$FeBr2$', '$FeBr3$', 1, 'البروم يكوّن $FeBr3$'], ['$I2$', '$FeI2$', '$FeI3$', 0, 'اليود عامل مؤكسد ضعيف'], ['$S$', '$FeS$', '$Fe2S3$', 0, 'الكبريت عامل مؤكسد ضعيف']];
+  box.innerHTML = labHead(sc, m, 'معمل اللافلزات') + '<p class="body">الحديد الساخن + لافلز. اختار الناتج لكل واحد:</p><div class="pred-rows"></div><button class="btn" id="nm-c" disabled>تحقق</button><div class="nfb" aria-live="polite" style="width:100%;display:grid;justify-items:center"></div>';
+  const rows = $('.pred-rows', box); const pick = [];
+  R.forEach((r, i) => {
+    const d = el('<div class="pred-row"><span>' + F('$Fe$ + ' + r[0]) + ' ⟵ ؟</span><span class="seg" role="group"><button aria-pressed="false" data-v="0">' + F(r[1]) + '</button><button aria-pressed="false" data-v="1">' + F(r[2]) + '</button></span></div>');
+    $$('button', d).forEach(b => b.onclick = () => { pick[i] = +b.dataset.v; $$('button', d).forEach(x => x.setAttribute('aria-pressed', String(x === b))); $('#nm-c', box).disabled = R.some((x, j) => pick[j] == null); });
+    rows.appendChild(d);
+  });
+  let tries = 0;
+  const explain = '<div class="fb-row"><span>🧠 الفكرة</span><div>عناصر المجموعة <b>7A</b> عوامل مؤكسدة قوية ← حديد III ($FeCl3$, $FeBr3$). عناصر المجموعة <b>6A</b> عوامل مؤكسدة ضعيفة ← حديد II ($FeS$).</div></div><div class="fb-row"><span>⚠️ الفخ</span><div><b>اليود</b> من 7A لكنه عامل مؤكسد <b>ضعيف</b> ← $FeI2$.</div></div><div class="fb-row"><span>📝</span><div>$2Fe + 3Cl2 -[Δ]-> 2FeCl3$ ، $Fe + S -[Δ]-> FeS$</div></div>';
+  $('#nm-c', box).onclick = () => {
+    tries++;
+    const wrong = R.map((r, i) => pick[i] === r[3] ? null : r).filter(Boolean);
+    if (!wrong.length) { $('.nfb', box).innerHTML = '<div class="fb ok anim-in"><div class="fb-h">✅ كله صح</div>' + explain + '</div>'; $('#nm-c', box).remove(); finish(key, 'lab', tries === 1 ? 1 : .6); ready(); }
+    else $('.nfb', box).innerHTML = '<div class="fb bad anim-in"><div class="fb-h">❌ ' + wrong.length + ' محتاجين مراجعة</div><div>🎯 الدليل: الناتج بيعتمد على قوة اللافلز كعامل مؤكسد، مش على مجموعته بس.</div></div>';
+  };
+  if (done) { $('.nfb', box).innerHTML = '<div class="fb ok"><div class="fb-h">✅ مكتمل</div>' + explain + '</div>'; ready(false); }
+}
+
+function labLattice(sc, box, key, m) {
+  const done = S.sc[key] && S.sc[key].d;
+  const TY = {
+    inter: { t: 'البينية', simple: 'زي حصى صغير اتحشر بين كور كبيرة: الطبقات مش هتعرف تتزحلق بسهولة. (دي وسيلة تذكر بس)', sci: 'ذرات عنصر <b>أصغر حجماً</b> تدخل في <b>المسافات البينية</b> للشبكة البلورية فتعوق انزلاق الطبقات فتزيد الصلابة، وتتأثر قابلية الطرق والسحب ودرجات الانصهار والتوصيل الكهربي والخواص المغناطيسية. مثال: الحديد والكربون (حديد صلب).' },
+    sub: { t: 'الاستبدالية', simple: 'زي ما تبدّل لاعب بلاعب نفس المقاس في نفس المكان. (وسيلة تذكر)', sci: 'استبدال بعض ذرات الفلز الأصلي بذرات فلز آخر له <b>نفس نصف القطر والشكل البلوري والخواص الكيميائية</b>. أمثلة: (Fe, Cr) الصلب الذي لا يصدأ، (Au, Cu)، (Fe, Ni).' },
+    inm: { t: 'البين فلزية', simple: 'مش خلطة… دي «جواز كيميائي»: مركب جديد بنسبة ثابتة. (وسيلة تذكر)', sci: 'تنشأ من <b>اتحاد كيميائي</b> فتنتج مركبات صلبة <b>لا تخضع لقواعد التكافؤ</b>، وغالباً من فلزات لا تقع في مجموعة واحدة. أمثلة: $Au2Pb$، السيمنتيت $Fe3C$، الديورألومين.' }
+  };
+  const seen = new Set(); let cur = 'inter';
+  box.innerHTML = labHead(sc, m, 'المجهر') + '<div class="tabs" role="tablist"></div><div class="lattice panel"></div><div class="hook"></div><div class="note lnote"></div>';
+  function svg(k) {
+    let g = '';
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 6; c++) {
+      const x = 40 + c * 50, y = 30 + r * 46;
+      let fill = '#7d8fa5', rad = 19, lbl = '';
+      if (k === 'sub' && ((r + c * 2) % 5 === 0)) fill = '#e2b34a';
+      if (k === 'inm') { fill = (r + c) % 2 ? '#e2b34a' : '#7d8fa5'; rad = (r + c) % 2 ? 17 : 19; }
+      g += '<circle cx="' + x + '" cy="' + y + '" r="' + rad + '" fill="' + fill + '" stroke="#0a0c11" stroke-width="1.5"/>';
+    }
+    if (k === 'inter') for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++) if ((r + c) % 2 === 0) g += '<circle cx="' + (65 + c * 50) + '" cy="' + (53 + r * 46) + '" r="7" fill="#ff7a1a" stroke="#0a0c11"/>';
+    const leg = k === 'inter' ? 'رمادي: ذرات الفلز • برتقالي صغير: ذرات أصغر في المسافات البينية' : k === 'sub' ? 'ذهبي: ذرات بديلة بنفس الحجم مكان ذرات الفلز' : 'ترتيب منتظم لنوعين من الذرات متحدين كيميائياً';
+    return '<svg viewBox="0 0 320 190" role="img" aria-label="' + leg + '">' + g + '</svg><div class="note" style="text-align:center">' + leg + '</div>';
+  }
+  function draw() {
+    seen.add(cur);
+    const t = $('.tabs', box); t.innerHTML = '';
+    Object.keys(TY).forEach(k => { const b = el('<button class="tok" role="tab" aria-selected="' + (k === cur) + '">' + (seen.has(k) ? '✓ ' : '') + TY[k].t + '</button>'); b.onclick = () => { cur = k; draw(); }; t.appendChild(b); });
+    $('.lattice', box).innerHTML = svg(cur);
+    $('.hook', box).innerHTML = '<div><h4>🧒 فكرة بسيطة</h4>' + F(TY[cur].simple) + '</div><div><h4>🔬 النسخة العلمية</h4>' + F(TY[cur].sci) + '</div>';
+    $('.lnote', box).textContent = seen.size < 3 ? 'شوف الأنواع التلاتة (' + seen.size + ' من 3)' : 'البينية والاستبدالية: خلط فيزيائي • البين فلزية: تفاعل كيميائي';
+    if (seen.size === 3) { finish(key, 'lab', 1, 10); ready(); }
+  }
+  draw();
+  if (done) ready(false);
+}
+
+/* ───────── lab mode (sandbox) ───────── */
+function rLabs() {
+  const st = shell('labs');
+  const v = el('<section class="view"><div class="page"><div class="page-h"><span class="big-ico">🧪</span><h1>المعمل</h1><p>كل المعامل والمسائل والتصنيفات في مكان واحد. العب أي واحد تاني من غير ما تخسر تقدمك.</p></div><div class="cards"></div></div></section>');
+  st.appendChild(v);
+  const cards = $('.cards', v);
+  ['identity', 'ores', 'prep', 'furnaces', 'steel', 'reactions', 'oxides', 'transform'].forEach(id => {
+    MIS[id].scenes.forEach((sc, i) => {
+      if (!['lab', 'calc', 'sort', 'boss'].includes(sc.t)) return;
+      const k = id + ':' + i; const dn = S.sc[k] && S.sc[k].d;
+      const name = sc.title || sc.name || (sc.t === 'sort' ? 'تصنيف: ' + sc.q.replace(/<[^>]+>/g, '').slice(0, 40) : sc.q);
+      const b = el('<button class="card ' + (dn ? 'done' : '') + '"><span class="ct">' + (sc.icon || '🧪') + ' ' + F(name) + '</span><span class="cs">' + MIS[id].icon + ' ' + esc(MIS[id].title) + (dn ? ' • ✓ مكتمل' : '') + '</span></button>');
+      b.onclick = () => go({ name: 'sandbox', id, i });
+      cards.appendChild(b);
+    });
+  });
+}
+function rSandbox() {
+  const st = shell('labs');
+  const view = el('<section class="view"><div class="scene-wrap"><div class="scene anim-in" id="scene"></div></div></section>');
+  st.appendChild(view);
+  const m = MIS[V.id], sc = m.scenes[V.i], key = V.id + ':' + V.i;
+  const box = $('#scene');
+  const back = el('<div class="row" style="width:100%;justify-content:space-between"><button class="btn ghost small" id="sb-b">→ رجوع للمعمل</button>' + (m.deep ? '<button class="btn ghost small" id="sb-d">🔬 المرجع</button>' : '') + '</div>');
+  // a hidden next button lets scene renderers call ready() safely
+  const hidden = el('<button id="b-next" hidden disabled></button>');
+  box.parentNode.insertBefore(back, box);
+  box.parentNode.appendChild(hidden);
+  $('#sb-b').onclick = () => go({ name: 'labs' });
+  if (m.deep) $('#sb-d').onclick = () => overlay('🔬 ' + m.title, m.deep);
+  ({ lab: sLab, calc: sCalc, sort: sSort, boss: sBoss })[sc.t](sc, box, key, m);
+  $('.scene-wrap', view).style.alignContent = 'start';
+}
+
+/* ───────── exam arena ───────── */
+let EX = null;
+function rExam() {
+  const st = shell('exam');
+  const v = el('<section class="view"><div class="page" id="ex"></div></section>');
+  st.appendChild(v);
+  const box = $('#ex', v);
+  if (EX && EX.active) return examQ(box);
+  const filt = V.filter || 'all';
+  const ids = ['identity', 'ores', 'prep', 'furnaces', 'steel', 'reactions', 'oxides', 'transform'];
+  const pool = C.EXAM.filter(q => filt === 'all' || q.m === filt);
+  const right = C.EXAM.filter(q => S.exam[q.id] === 1).length;
+  box.innerHTML = '<div class="page-h"><span class="big-ico">🎯</span><h1>ساحة الامتحان</h1><p>أسئلة بنمط الامتحان من كتابك والاسترشادي. إجابة واحدة لكل سؤال، وبعدها الشرح الكامل.</p><p class="muted">حلّيت صح ' + right + ' من ' + C.EXAM.length + ' سؤال.</p></div>' +
+    '<div class="filter" role="group" aria-label="اختار الموضوع"><button class="tok" aria-pressed="' + (filt === 'all') + '" data-f="all">🌐 الكل (' + C.EXAM.length + ')</button>' + ids.map(id => '<button class="tok" aria-pressed="' + (filt === id) + '" data-f="' + id + '">' + MIS[id].icon + ' ' + esc(MIS[id].title) + ' (' + C.EXAM.filter(q => q.m === id).length + ')</button>').join('') + '</div>' +
+    '<div class="row"><button class="btn pulse" id="ex-go">ابدأ ' + Math.min(10, pool.length) + ' أسئلة</button>' + (pool.length > 10 ? '<button class="btn ghost small" id="ex-all">كل الـ ' + pool.length + '</button>' : '') + (C.EXAM.some(q => S.exam[q.id] === 0) ? '<button class="btn ghost small" id="ex-wrong">🔁 أسئلتي الغلط بس</button>' : '') + '</div>';
+  $$('[data-f]', box).forEach(b => b.onclick = () => { EX = null; go({ name: 'exam', filter: b.dataset.f }); });
+  const start = list => { EX = { active: true, list, i: 0, score: 0, res: [] }; examQ(box); };
+  $('#ex-go', box).onclick = () => start(shuffle(pool).slice(0, 10));
+  if ($('#ex-all', box)) $('#ex-all', box).onclick = () => start(shuffle(pool));
+  if ($('#ex-wrong', box)) $('#ex-wrong', box).onclick = () => start(shuffle(C.EXAM.filter(q => S.exam[q.id] === 0)));
+}
+function examQ(box) {
+  const q = EX.list[EX.i];
+  if (!q) return examEnd(box);
+  box.innerHTML = '<div class="page-h"><span class="kicker">🎯 سؤال ' + (EX.i + 1) + ' من ' + EX.list.length + ' • ' + MIS[q.m].icon + ' ' + esc(MIS[q.m].title) + '</span><div class="bar" style="width:100%;max-width:400px"><i style="width:' + Math.round(100 * EX.i / EX.list.length) + '%"></i></div><h2 class="q">' + F(q.q) + '</h2></div><div class="mcw" style="display:grid;justify-items:center;gap:12px"></div>';
+  $('.q', box).setAttribute('tabindex', '-1'); $('.q', box).focus({ preventScroll: true });
+  mountMCQ($('.mcw', box), q, { mode: 'exam', onDone(r) {
+    const ok = r === 1;
+    if (ok && S.exam[q.id] !== 1) { if (!S.examXP) S.examXP = {}; if (!S.examXP[q.id]) { S.examXP[q.id] = 1; addXP(XP.exam, KIND.exam); } }
+    S.exam[q.id] = ok ? 1 : 0; save();
+    EX.score += ok ? 1 : 0; EX.res.push([q, ok]);
+    const nb = el('<button class="btn" id="b-next">' + (EX.i + 1 < EX.list.length ? 'السؤال الجاي ←' : 'النتيجة 🏁') + '</button>');
+    nb.onclick = () => { EX.i++; examQ(box); };
+    $('.mcw', box).appendChild(nb);
+  } });
+}
+function examEnd(box) {
+  const n = EX.list.length, s = EX.score;
+  const wrong = EX.res.filter(r => !r[1]);
+  EX.active = false;
+  box.innerHTML = '<div class="page-h"><span class="big-ico">' + (s / n >= .8 ? '🏆' : s / n >= .5 ? '💪' : '📘') + '</span><div class="score">' + s + ' من ' + n + '</div><p>' + (s / n >= .8 ? 'أداء امتحان حقيقي!' : s / n >= .5 ? 'كويس — راجع الغلطات تحت وهتطلع أقوى.' : 'كل غلطة هنا = نقطة مش هتغلط فيها في الامتحان.') + '</p></div>' +
+    (wrong.length ? '<h3 style="text-align:center">🔁 راجع غلطاتك</h3><div class="cards">' + wrong.map(([q]) => '<div class="card"><span class="cs">' + MIS[q.m].icon + ' ' + esc(MIS[q.m].title) + '</span><span>' + F(q.q) + '</span><span style="color:var(--ok)">✓ ' + F(q.o[q.a]) + '</span><span class="cs">' + F(q.idea || '') + '</span></div>').join('') + '</div>' : '') +
+    '<div class="row"><button class="btn" id="ex-again">جولة جديدة</button><button class="btn ghost small" id="ex-map">🗺️ الرحلة</button></div>';
+  $('#ex-again', box).onclick = () => go({ name: 'exam', filter: V.filter });
+  $('#ex-map', box).onclick = () => go({ name: 'map' });
+}
+
+/* ───────── review ───────── */
+const BOX_MS = [0, 5 * 60e3, 864e5, 3 * 864e5, 7 * 864e5, 14 * 864e5];
+let RV = null;
+function rReview() {
+  const st = shell('review');
+  const v = el('<section class="view"><div class="page" id="rv"></div></section>');
+  st.appendChild(v);
+  const box = $('#rv', v);
+  if (RV && RV.active) return RV.kind === 'cards' ? cardStep(box) : rapidStep(box);
+  const started = C.MISSIONS.filter(m => startedMission(m.id));
+  const avail = CARDS.filter(c => startedMission(c.m));
+  const due = dueCards();
+  box.innerHTML = '<div class="page-h"><span class="big-ico">🔁</span><h1>مراجعة</h1><p>اللي اتعلمته بيرجعلك على فترات: كارت افتكرته بيستنى أكتر، وكارت نسيته بيرجع بسرعة.</p></div>' +
+    (avail.length ? '<div class="cards"><button class="card" id="rv-cards"><span class="ct">🧠 كروت الذاكرة</span><span class="cs">' + due.length + ' مستحقة الآن من ' + avail.length + '</span></button><button class="card" id="rv-rapid"><span class="ct">⚡ استرجاع سريع</span><span class="cs">8 أسئلة سريعة من المهام اللي بدأتها</span></button></div><p class="muted" style="text-align:center">المهام اللي بدأتها: ' + started.map(m => m.icon).join(' ') + '</p>'
+      : '<p style="text-align:center" class="muted">لسه مفيش حاجة تتراجع. ابدأ أول مهمة من الخريطة، والكروت هتظهر هنا.</p><div class="row"><button class="btn" id="rv-go">🗺️ للخريطة</button></div>');
+  if ($('#rv-go', box)) $('#rv-go', box).onclick = () => go({ name: 'map' });
+  if ($('#rv-cards', box)) $('#rv-cards', box).onclick = () => { const list = (due.length ? shuffle(due) : shuffle(avail)).slice(0, 12); RV = { active: true, kind: 'cards', list, i: 0, known: 0, flipped: false }; cardStep(box); };
+  if ($('#rv-rapid', box)) $('#rv-rapid', box).onclick = () => {
+    const qs = [];
+    started.forEach(m => m.scenes.forEach(sc => { if (sc.t === 'mcq') qs.push(sc); }));
+    RV = { active: true, kind: 'rapid', list: shuffle(qs).slice(0, 8), i: 0, ok: 0 }; rapidStep(box);
+  };
+}
+function cardStep(box) {
+  const c = RV.list[RV.i];
+  if (!c) {
+    RV.active = false;
+    const today = new Date().toDateString();
+    box.innerHTML = '<div class="page-h"><span class="big-ico">✅</span><h1>خلصت الكروت</h1><p>افتكرت ' + RV.known + ' من ' + RV.list.length + '. الكروت اللي نسيتها هترجعلك بعد شوية.</p></div><div class="row"><button class="btn" id="rv-b">رجوع</button></div>';
+    if (S.revDay !== today && RV.list.length >= 5) { S.revDay = today; save(); addXP(10, '🔁 مراجعة'); }
+    $('#rv-b', box).onclick = () => go({ name: 'review' });
+    return;
+  }
+  box.innerHTML = '<div class="page-h"><span class="kicker recall">🧠 كارت ' + (RV.i + 1) + ' من ' + RV.list.length + ' • ' + MIS[c.m].icon + '</span><button class="linkbtn" id="rv-quit">إنهاء الجلسة</button></div><div class="row"><div class="fcard"><div>' + F(c.f) + '</div>' + (RV.flipped ? '<div class="back anim-in">' + F(c.b) + '</div>' : '<div class="muted">افتكر الإجابة في دماغك الأول…</div>') + '</div></div><div class="row" id="rv-act"></div>';
+  const act = $('#rv-act', box);
+  $('#rv-quit', box).onclick = () => { RV = null; go({ name: 'review' }); };
+  if (!RV.flipped) { const b = el('<button class="btn" id="b-next">👀 اكشف</button>'); b.onclick = () => { RV.flipped = true; cardStep(box); }; act.appendChild(b); b.focus(); }
+  else {
+    const no = el('<button class="btn ghost">😅 نسيتها</button>'), yes = el('<button class="btn" id="b-next">✅ افتكرتها</button>');
+    const rec = S.cards[c.id] || { box: 0 };
+    no.onclick = () => { S.cards[c.id] = { box: 1, due: Date.now() + BOX_MS[1] }; save(); RV.i++; RV.flipped = false; cardStep(box); };
+    yes.onclick = () => { const bx = Math.min(5, (rec.box || 0) + 1); S.cards[c.id] = { box: bx, due: Date.now() + BOX_MS[bx] }; save(); RV.known++; RV.i++; RV.flipped = false; cardStep(box); };
+    act.appendChild(no); act.appendChild(yes); yes.focus();
+  }
+}
+function rapidStep(box) {
+  const q = RV.list[RV.i];
+  if (!q) { RV.active = false; box.innerHTML = '<div class="page-h"><span class="big-ico">⚡</span><div class="score">' + RV.ok + ' من ' + RV.list.length + '</div><p>استرجاع سريع خلص.</p></div><div class="row"><button class="btn" id="rv-b">رجوع</button></div>'; $('#rv-b', box).onclick = () => go({ name: 'review' }); return; }
+  box.innerHTML = '<div class="page-h"><span class="kicker recall">⚡ ' + (RV.i + 1) + ' من ' + RV.list.length + '</span><button class="linkbtn" id="rv-quit">إنهاء الجلسة</button><h2 class="q">' + F(q.q) + '</h2></div><div class="mcw" style="display:grid;justify-items:center;gap:12px"></div>';
+  $('#rv-quit', box).onclick = () => { RV = null; go({ name: 'review' }); };
+  mountMCQ($('.mcw', box), q, { mode: 'exam', onDone(r) { if (r === 1) RV.ok++; const nb = el('<button class="btn" id="b-next">التالي ←</button>'); nb.onclick = () => { RV.i++; rapidStep(box); }; $('.mcw', box).appendChild(nb); nb.focus({ preventScroll: true }); } });
+}
+
+/* ───────── final mental model ───────── */
+function rModel() {
+  const st = shell('model');
+  const v = el('<section class="view"><div class="page"><div class="page-h"><span class="big-ico">🌌</span><h1>الصورة الكاملة</h1><p>كل اللي فتحته بينوّر. شوف إزاي كل حاجة متوصلة.</p></div><div class="model-tree"></div></div></section>');
+  st.appendChild(v);
+  const t = $('.model-tree', v);
+  const node = (id) => { const m = MIS[id]; const on = !!S.done[id]; return '<button class="mnode ' + (on ? 'on' : '') + '" data-id="' + id + '"><span class="mt">' + m.icon + ' ' + esc(m.title) + '</span><span class="mchips">' + m.concepts.map(c => '<span>' + F(c) + '</span>').join('') + '</span></button>'; };
+  t.innerHTML = '<div class="mnode ' + (S.done.identity ? 'on' : '') + '"><span class="mt">' + C.MODEL.root.icon + ' ' + C.MODEL.root.t + '</span><small dir="ltr">' + C.MODEL.root.s + '</small></div><div class="vline"></div>' +
+    '<div class="mbranches">' + C.MODEL.branches.map(b => '<div class="mbranch"><div class="bt">' + b.t + ' • ' + b.s + '</div>' + b.nodes.map(node).join('<div class="vline"></div>') + '</div>').join('') + '</div><div class="vline"></div>' +
+    '<div class="mnode ' + (S.done.final ? 'on' : '') + '"><span class="mt">🏆 المسبك الأخير ← ' + C.MODEL.end.icon + ' ' + C.MODEL.end.t + '</span><small>هنا الطريقين بيتقابلوا: استخلاص + كيمياء = سؤال امتحان كامل</small></div>';
+  $$('.mnode[data-id]', t).forEach(b => b.onclick = () => overlay('🔬 ' + MIS[b.dataset.id].title, MIS[b.dataset.id].deep));
+}
+
+/* ───────── keyboard ───────── */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && $('.ovl')) { closeOverlay(); return; }
+  if ($('.ovl')) return;
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'textarea' || tag === 'input') return;
+  if (/^[1-5]$/.test(e.key)) {
+    const b = $$('.opt:not(:disabled)').find(x => x.dataset.k === e.key);
+    if (b) { e.preventDefault(); b.click(); }
+  } else if (e.key === 'Enter' && e.target === document.body) {
+    const n = $('#b-next'); if (n && !n.disabled && !n.hidden) { e.preventDefault(); n.click(); }
+  }
+});
+
+/* ───────── ember particles ───────── */
+(function embers() {
+  const cv = $('#fx'), cx = cv.getContext('2d'); let W, H, P = [];
+  const resize = () => { W = cv.width = innerWidth * devicePixelRatio; H = cv.height = innerHeight * devicePixelRatio; cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px'; };
+  resize(); addEventListener('resize', resize);
+  for (let i = 0; i < 34; i++) P.push({ x: Math.random(), y: Math.random(), v: .0004 + Math.random() * .0009, r: .6 + Math.random() * 1.8, a: .15 + Math.random() * .45, w: Math.random() * 6.28 });
+  function tick() {
+    cx.clearRect(0, 0, W, H);
+    if (!reduced() && !document.hidden) {
+      P.forEach(p => {
+        p.y -= p.v; p.w += .01; if (p.y < -.02) { p.y = 1.02; p.x = Math.random(); }
+        const x = (p.x + Math.sin(p.w) * .01) * W, y = p.y * H;
+        cx.beginPath(); cx.fillStyle = 'rgba(255,' + (120 + Math.round(p.a * 120)) + ',40,' + (p.a * (1 - Math.abs(.5 - p.y))).toFixed(3) + ')';
+        cx.arc(x, y, p.r * devicePixelRatio, 0, 6.283); cx.fill();
+      });
+    }
+    requestAnimationFrame(tick);
+  }
+  tick();
+})();
+
+/* ───────── boot ───────── */
+function start(d) {
+  if (d && d.V) V = d.V;
+  render();
+}
+if (window.claude && window.claude.hot && window.claude.hot.snapshot) { try { window.claude.hot.snapshot(() => ({ V: V.name === 'mission' ? V : { name: V.name } })); } catch (e) { } }
+if (window.claude && window.claude.hot && window.claude.hot.ready) window.claude.hot.ready(start);
+else start((window.claude && window.claude.hot && window.claude.hot.data) || {});
+window.__IQ = { get S() { return S; }, go, MIS, F, get V() { return V; } };
+})();
+</script>
